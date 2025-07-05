@@ -5,5 +5,5 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   // This base path is crucial for GitHub Pages
-  base: '/washBuddy/', // <-- IMPORTANT: Change 'your-repo-name' to your GitHub repo's name
+  base: '/', // <-- IMPORTANT: Change 'your-repo-name' to your GitHub repo's name
 });
