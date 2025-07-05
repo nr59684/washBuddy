@@ -57,9 +57,9 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
             </h1>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
-            <div className="hidden sm:flex items-center gap-2 bg-sky-700/50 px-3 py-1.5 rounded-lg">
-                <span className="text-sm font-medium text-sky-200">Room Code:</span>
-                <span className="font-mono font-bold text-white tracking-wider">{user.roomId}</span>
+            <div className="flex items-center gap-2 bg-sky-700/50 px-2 sm:px-3 py-1.5 rounded-lg">
+                <span className="hidden sm:inline text-sm font-medium text-sky-200">Room Code:</span>
+                <span className="font-mono font-bold text-white tracking-wider text-sm sm:text-base">{user.roomId}</span>
                 <button onClick={copyRoomId} className="text-sky-200 hover:text-white p-1 rounded-full" title="Copy Room Code">
                     {copied ? <CheckIcon className="w-4 h-4"/> : <CopyIcon className="w-4 h-4"/>}
                 </button>
@@ -69,7 +69,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
             </div>
             <button onClick={onLogout} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-3 py-2 rounded-lg font-semibold transition-colors">
                 <LogOutIcon className="w-5 h-5" />
-                <span className="hidden md:inline">Leave</span>
+                <span className="hidden sm:inline">Leave</span>
             </button>
         </div>
       </div>

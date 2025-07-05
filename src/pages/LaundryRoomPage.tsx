@@ -221,30 +221,30 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <Header user={displayUser} onLogout={onLogout} />
-      <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8">
+      <main className="flex-grow container mx-auto p-3 sm:p-4 md:p-6 lg:p-8">
         <div>
-            <div className="flex justify-between items-center mb-4 gap-2">
-              <h2 className="text-2xl font-bold text-slate-800 flex items-center truncate">
-                <WasherIcon className="w-8 h-8 mr-3 text-sky-600 flex-shrink-0" />
-                <span className="truncate" title={roomData?.name}>{isLoading ? "Loading..." : roomData?.name}</span>
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-800 flex items-center self-start sm:self-center">
+                <WasherIcon className="w-7 h-7 sm:w-8 sm:h-8 mr-3 text-sky-600 flex-shrink-0" />
+                <span title={roomData?.name}>{isLoading ? "Loading..." : roomData?.name}</span>
               </h2>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={() => setIsSettingsModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition-colors" title="Room Settings">
+              <div className="flex items-center gap-2 self-end sm:self-center flex-shrink-0">
+                <button onClick={() => setIsSettingsModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold p-2 sm:px-4 sm:py-2 rounded-lg transition-colors" title="Room Settings">
                   <SettingsIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Settings</span>
                 </button>
-                <button onClick={() => setIsMembersModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition-colors" title="View room members">
+                <button onClick={() => setIsMembersModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold p-2 sm:px-4 sm:py-2 rounded-lg transition-colors" title="View room members">
                   <UsersIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Members</span>
                 </button>
-                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors" title="Add a new machine">
+                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold p-2 sm:px-4 sm:py-2 rounded-lg transition-colors" title="Add a new machine">
                   <PlusCircleIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Add Machine</span>
                 </button>
               </div>
             </div>
             
-             <div className="flex justify-center gap-4 mb-6">
+             <div className="flex flex-wrap justify-center gap-4 mb-6">
                 {allWashersBusy && (
                     <button 
                         onClick={() => handleSubscribe('washer')}
@@ -265,7 +265,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
               {machines.map(machine => (<MachineCard key={machine.id} machine={machine} user={user} onUpdateStatus={updateMachineStatus} onDelete={requestDeleteMachine} onRequestStart={requestStartMachine} />))}
               {machines.length === 0 && !isLoading && (
                 <div className="md:col-span-2 lg:col-span-3 xl:col-span-4 text-center py-12 px-6 bg-white rounded-lg shadow-sm">

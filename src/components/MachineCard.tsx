@@ -94,8 +94,8 @@ const MachineCard: React.FC<MachineCardProps> = ({ machine, onUpdateStatus, onDe
   return (
     <div className={`group transition-all duration-300 bg-white rounded-xl shadow-md overflow-hidden flex flex-col ${isOutOfService ? 'saturate-50' : ''}`}>
       {/* Header with name and action buttons */}
-      <div className="flex justify-between items-center p-3 border-b border-slate-200">
-        <h3 className="font-semibold text-lg text-slate-800 truncate" title={machine.name}>{machine.name}</h3>
+      <div className="flex justify-between items-center p-2 sm:p-3 border-b border-slate-200">
+        <h3 className="font-semibold text-base sm:text-lg text-slate-800 truncate" title={machine.name}>{machine.name}</h3>
         <div className="flex items-center gap-2">
            <button onClick={toggleOutOfService} disabled={isServiceToggleDisabled} className="p-2 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors" title={isOutOfService ? "Mark as Repaired" : "Mark as Out of Service"}>
               <WrenchIcon className="w-5 h-5"/>
@@ -132,9 +132,9 @@ const MachineCard: React.FC<MachineCardProps> = ({ machine, onUpdateStatus, onDe
       </div>
 
       {/* Bottom Action Area */}
-      <div className="p-3 border-t border-slate-200 space-y-2">
+      <div className="p-2 sm:p-3 border-t border-slate-200 space-y-2">
           {machine.lastUsedBy && (
-          <div className="text-center flex items-center justify-center gap-2 text-sm text-slate-600 font-medium">
+          <div className="text-center flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-600 font-medium">
               <UserIcon className="w-4 h-4"/>
               <span>
                   {machine.status === MachineStatus.Available || machine.status === MachineStatus.OutOfService ? 'Last used by' : 'Started by'}:
@@ -146,7 +146,7 @@ const MachineCard: React.FC<MachineCardProps> = ({ machine, onUpdateStatus, onDe
           <button
             onClick={handleActionClick}
             disabled={isOutOfService}
-            className={`w-full flex items-center justify-center px-4 py-2.5 rounded-md text-white font-semibold transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed ${actionConfig.style}`}
+            className={`w-full flex items-center justify-center px-3 py-2 sm:px-4 sm:py-2.5 rounded-md text-white font-semibold transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed ${actionConfig.style}`}
           >
             {MainActionButtonIcon}
             {actionConfig.text}

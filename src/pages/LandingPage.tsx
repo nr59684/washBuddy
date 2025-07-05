@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SparklesIcon, UserIcon, PlusCircleIcon, LogInIcon } from '../components/icons';
 
 interface LandingPageProps {
-  onCreateRoom: (username: string, roomName: string) => void;
+  onCreateRoom: (username: string, roomName:string) => void;
   onJoinRoom: (username: string, roomId: string) => void;
 }
 
@@ -40,9 +40,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onCreateRoom, onJoinRoom }) =
       <div className="text-center mb-8">
         <div className="flex items-center justify-center mb-4">
           <SparklesIcon className="w-12 h-12 text-sky-500 mr-3"/>
-          <h1 className="text-5xl font-bold text-slate-800">Wash Buddy</h1>
+          <h1 className="text-4xl sm:text-5xl font-bold text-slate-800">Wash Buddy</h1>
         </div>
-        <p className="text-slate-600 text-lg">Your smart solution for dorm laundry.</p>
+        <p className="text-slate-600 text-base sm:text-lg">Your smart solution for dorm laundry.</p>
       </div>
 
       <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg transition-all duration-500">
