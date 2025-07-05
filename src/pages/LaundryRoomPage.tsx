@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
@@ -14,6 +12,13 @@ interface LaundryRoomPageProps {
 }
 
 const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
+
+  const isNotificationSupported =
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    typeof Notification.requestPermission === 'function';
+
+  type NotificationPermissionState = 'granted' | 'denied' | 'default' | 'unsupported';
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -33,7 +38,15 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeName, setNewModeName] = useState('');
   const [newModeDuration, setNewModeDuration] = useState('');
 
-  const [notificationPermission, setNotificationPermission] = useState('default');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>(
+    isNotificationSupported ? 'default' : 'unsupported'
+  );
+
+  useEffect(() => {
+    if (isNotificationSupported) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
   const [subscriptions, setSubscriptions] = useState<Set<'washer' | 'dryer'>>(() => {
     try {
         const saved = localStorage.getItem('washBuddySubs');
@@ -56,18 +69,22 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     }
   }, [subscriptions]);
 
-  const sendNotification = useCallback((title: string, options?: NotificationOptions) => {
-    // Log for debugging
-    console.log(`Attempting to send notification. Permission: ${notificationPermission}`);
-    if (notificationPermission === 'granted') {
-      new Notification(title, { 
-          ...options, 
-          // Use a stable icon URL
-          icon: 'https://i.imgur.com/O9N4p5p.png', 
-          badge: 'https://i.imgur.com/O9N4p5p.png' 
+  const sendNotification = useCallback(
+    (title: string, options?: NotificationOptions) => {
+      if (!isNotificationSupported) {
+        console.warn('Notifications unsupported—skipping.');
+        return;
+      }
+      if (notificationPermission === 'granted') {
+        new Notification(title, {
+          ...options,
+          icon: 'https://i.imgur.com/O9N4p5p.png',
+          badge: 'https://i.imgur.com/O9N4p5p.png'
         });
-    }
-  }, [notificationPermission]);
+      }
+    },
+    [notificationPermission]
+  );
   
   // This refactoring solves the stale closure problem.
   // The effect now runs only once, and we use refs inside the callback
@@ -180,14 +197,18 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   }, [roomData, clearNotificationTimer, sendNotification]);
   
   const handleRequestNotificationPermission = async () => {
-    if (Notification.permission === 'granted' || Notification.permission === 'denied') {
-      setNotificationPermission(Notification.permission);
-      return Notification.permission;
-    }
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
-    return permission;
-  };
+  if (!isNotificationSupported) {
+    alert('Notifications are not supported in this browser/device.');
+    return 'denied';
+  }
+  if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+    setNotificationPermission(Notification.permission);
+    return Notification.permission;
+  }
+  const permission = await Notification.requestPermission();
+  setNotificationPermission(permission);
+  return permission;
+};
   
   const handleSubscribe = async (type: 'washer' | 'dryer') => {
     const permission = await handleRequestNotificationPermission();
@@ -343,7 +364,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
             </div>
             
              <div className="flex justify-center gap-4 mb-6">
-                {allWashersBusy && (
+                {allWashersBusy && isNotificationSupported && (
                     <button 
                         onClick={() => handleSubscribe('washer')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('washer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
@@ -352,7 +373,10 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                         <span>{subscriptions.has('washer') ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
                     </button>
                 )}
-                {allDryersBusy && (
+                {allWashersBusy && !isNotificationSupported && (
+                  <p className="text-sm text-gray-500">Notifications not available on this device.</p>
+                )}
+                {allDryersBusy && isNotificationSupported && (
                      <button 
                         onClick={() => handleSubscribe('dryer')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('dryer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
@@ -360,6 +384,9 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                         <BellIcon className="w-5 h-5"/>
                         <span>{subscriptions.has('dryer') ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
                     </button>
+                )}
+                {allDryersBusy && !isNotificationSupported && (
+                  <p className="text-sm text-gray-500">Notifications not available on this device.</p>
                 )}
             </div>
 
@@ -450,3 +477,5 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 };
 
 export default LaundryRoomPage;
+
+
