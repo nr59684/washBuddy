@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
