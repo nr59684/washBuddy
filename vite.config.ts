@@ -1,8 +1,8 @@
 
-
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import process from 'process'
+import { resolve } from 'path';
+import { readFileSync, writeFileSync } from 'fs';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -14,21 +14,30 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       {
-        name: 'replace-env-vars-in-sw',
-        // This plugin is still needed to replace placeholders in your service worker
-        transform: (code, id) => {
-          if (id.includes('firebase-messaging-sw.js')) {
-            let replacedCode = code;
+        name: 'replace-env-in-sw',
+        // This hook runs after the entire bundle has been generated.
+        writeBundle(options) {
+          if (!options.dir) {
+            console.error('vite-plugin-replace-env-in-sw: options.dir is not defined.');
+            return;
+          }
+          const swPath = resolve(options.dir, 'firebase-messaging-sw.js');
+          
+          try {
+            let swCode = readFileSync(swPath, 'utf-8');
             Object.keys(env).forEach((key) => {
               if (key.startsWith('VITE_')) {
                 const regex = new RegExp(`%${key}%`, 'g');
-                replacedCode = replacedCode.replace(regex, env[key]);
+                swCode = swCode.replace(regex, env[key]);
               }
             });
-            return {
-              code: replacedCode,
-              map: null,
-            };
+            writeFileSync(swPath, swCode);
+            console.log('Successfully replaced environment variables in service worker.');
+          } catch (error) {
+            // It might fail if the file doesn't exist, which is fine during dev.
+            if (mode !== 'development') {
+                console.error('Failed to replace environment variables in service worker:', error);
+            }
           }
         },
       },

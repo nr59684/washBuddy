@@ -13,6 +13,19 @@
   <body class="bg-slate-100">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          // The path must be absolute from the domain root to work correctly with the vite base config
+          const swUrl = `/firebase-messaging-sw.js`;
+          navigator.serviceWorker.register(swUrl, { scope: '/' })
+            .then(registration => {
+              console.log('Firebase SW registered with scope: ', registration.scope);
+            }).catch(error => {
+              console.log('SW registration failed: ', error);
+            });
+        });
+      }
+    </script>
   </body>
 </html>
