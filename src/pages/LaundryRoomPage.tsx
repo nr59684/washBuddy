@@ -43,10 +43,15 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   );
 
   useEffect(() => {
-    if (isNotificationSupported) {
+  if (isNotificationSupported) {
+    try {
       setNotificationPermission(Notification.permission);
+    } catch {
+      setNotificationPermission('unsupported');
     }
-  }, []);
+  }
+}, [isNotificationSupported]);
+
   const [subscriptions, setSubscriptions] = useState<Set<'washer' | 'dryer'>>(() => {
     try {
         const saved = localStorage.getItem('washBuddySubs');
