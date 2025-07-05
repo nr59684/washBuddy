@@ -1,4 +1,4 @@
-import { getDatabase, ref, onValue, set, off, get } from "firebase/database";
+import { ref, onValue, set, off, get } from "firebase/database";
 import { db } from './firebase'; // Import the initialized database
 import { Machine, MachineStatus, WashMode, RoomData } from '../types';
 

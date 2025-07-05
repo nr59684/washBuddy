@@ -11,7 +11,7 @@ interface MachineCardProps {
   onRequestStart: (machine: Machine) => void;
 }
 
-const MachineCard: React.FC<MachineCardProps> = ({ machine, user, onUpdateStatus, onDelete, onRequestStart }) => {
+const MachineCard: React.FC<MachineCardProps> = ({ machine, onUpdateStatus, onDelete, onRequestStart }) => {
   const [timeLeft, setTimeLeft] = useState('');
   const isOutOfService = machine.status === MachineStatus.OutOfService;
 
