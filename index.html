@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wash Buddy - Dorm Laundry</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0284c7">
+    <link rel="apple-touch-icon" href="https://i.imgur.com/O9N4p5p.png">
+<style>
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes tumble {
+    0% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(5px) rotate(15deg); }
+    50% { transform: translateY(0) rotate(0deg); }
+    75% { transform: translateY(-5px) rotate(-15deg); }
+    100% { transform: translateY(0) rotate(0deg); }
+  }
+  .machine-running .drum-content {
+    animation: spin 1.2s linear infinite;
+  }
+  .machine-running .water {
+     animation: tumble 1.5s ease-in-out infinite;
+  }
+  .door-open {
+    transform: perspective(400px) rotateY(75deg);
+  }
+  .text-shadow {
+    text-shadow: 1px 1px 3px rgb(0 0 0 / 50%);
+  }
+  .text-shadow-md {
+    text-shadow: 2px 2px 5px rgb(0 0 0 / 50%);
+  }
+</style>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-100">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
+  </body>
+</html>
