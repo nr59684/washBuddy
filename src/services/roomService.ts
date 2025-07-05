@@ -1,38 +1,40 @@
-import { ref, onValue, set, off, get } from "firebase/database";
+import firebase from 'firebase/compat/app';
 import { db } from './firebase'; // Import the initialized database
-import { Machine, MachineStatus, WashMode, RoomData } from '../types';
+import { Machine, MachineStatus, WashMode, RoomData, Member } from '../types';
 
 // --- SERVICE INTERFACE ---
 interface RoomService {
     getRoomData(): Promise<RoomData>;
     updateRoomData(data: RoomData): Promise<void>;
     onDataChange(callback: (data: RoomData) => void): () => void; // Returns an unsubscribe function
+    registerUser(username: string): Promise<void>;
+    addUserToken(username: string, token: string): Promise<void>;
+    updateUserSubscriptions(username: string, subs: { washer?: boolean, dryer?: boolean }): Promise<void>;
 }
 
 // --- FIREBASE REAL-TIME SERVICE ---
 
 class FirebaseRoomService implements RoomService {
     private roomId: string;
-    private roomRef;
+    private roomRef: firebase.database.Reference;
     private initialRoomName: string;
     private subscribers: ((data: RoomData) => void)[] = [];
     private isListenerAttached = false;
+    private firebaseListener: ((snapshot: firebase.database.DataSnapshot) => void) | null = null;
+
 
     constructor(roomId: string, roomName: string) {
         this.roomId = roomId;
         this.initialRoomName = roomName;
-        // CORRECTED: Use the imported 'db' instance instead of calling getDatabase() again.
-        this.roomRef = ref(db, 'rooms/' + this.roomId);
+        this.roomRef = db.ref('rooms/' + this.roomId);
     }
     
-    // Fetches the initial data or creates it if it doesn't exist.
     async getRoomData(): Promise<RoomData> {
         try {
-            const snapshot = await get(this.roomRef);
+            const snapshot = await this.roomRef.get();
             if (snapshot.exists()) {
                 return snapshot.val() as RoomData;
             } else {
-                // If the room is new, set it up with defaults.
                 const defaultMachines: Machine[] = [
                    { id: 1, name: 'Washer 1', type: 'washer', status: MachineStatus.Available, finishTime: null, lastUsedBy: null },
                    { id: 2, name: 'Washer 2', type: 'washer', status: MachineStatus.Available, finishTime: null, lastUsedBy: null },
@@ -47,59 +49,89 @@ class FirebaseRoomService implements RoomService {
                  name: this.initialRoomName,
                  machines: defaultMachines,
                  modes: defaultModes,
+                 members: {},
                };
                
-               await this.updateRoomData(initialData); // Persist the initial state
+               await this.updateRoomData(initialData);
                return initialData;
             }
         } catch (error) {
             console.error("Error fetching room data from Firebase:", error);
-            // Return a minimal empty state on error
-            return { name: this.initialRoomName, machines: [], modes: [] };
+            const fallbackData: RoomData = { name: this.initialRoomName, machines: [], modes: [], members: {} };
+            return fallbackData;
         }
     }
 
-    // Pushes the entire room data object to Firebase.
     async updateRoomData(data: RoomData): Promise<void> {
         try {
-            await set(this.roomRef, data);
+            await this.roomRef.set(data);
         } catch (error) {
             console.error("Error updating room data to Firebase:", error);
         }
     }
     
-    // Subscribes a callback to real-time data changes.
     onDataChange(callback: (data: RoomData) => void): () => void {
         this.subscribers.push(callback);
 
-        // Only attach one listener to Firebase, even with multiple subscribers.
         if (!this.isListenerAttached) {
-            onValue(this.roomRef, (snapshot) => {
+            this.firebaseListener = (snapshot: firebase.database.DataSnapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val() as RoomData;
-                    // Notify all subscribers of the new data.
                     this.subscribers.forEach(cb => cb(data));
                 }
-            });
+            };
+            this.roomRef.on('value', this.firebaseListener);
             this.isListenerAttached = true;
         }
 
-        // Return an unsubscribe function.
         return () => {
             this.subscribers = this.subscribers.filter(cb => cb !== callback);
-            // If there are no more subscribers, we could detach the listener,
-            // but for simplicity, we'll leave it attached for the app's lifecycle.
-            if (this.subscribers.length === 0) {
-                 off(this.roomRef);
+            if (this.subscribers.length === 0 && this.firebaseListener) {
+                 this.roomRef.off('value', this.firebaseListener);
                  this.isListenerAttached = false;
+                 this.firebaseListener = null;
             }
         };
+    }
+
+    async registerUser(username: string): Promise<void> {
+        const userRef = db.ref(`rooms/${this.roomId}/members/${username}`);
+        try {
+            const snapshot = await userRef.get();
+            if (!snapshot.exists()) {
+                const initialMemberData: Member = {
+                    tokens: {},
+                    subscriptions: { washer: false, dryer: false },
+                };
+                await userRef.set(initialMemberData);
+            }
+        } catch (error) {
+            console.error("Failed to register user:", error);
+        }
+    }
+
+    async addUserToken(username: string, token: string): Promise<void> {
+        const tokenPath = `members/${username}/tokens/${token}`;
+        const updates = { [tokenPath]: true };
+        try {
+            await this.roomRef.update(updates);
+        } catch (error) {
+            console.error("Failed to add user token:", error);
+        }
+    }
+
+    async updateUserSubscriptions(username: string, subs: { washer?: boolean, dryer?: boolean }): Promise<void> {
+        const subsPath = `members/${username}/subscriptions`;
+        try {
+            await this.roomRef.child(subsPath).update(subs);
+        } catch (error) {
+            console.error("Failed to update subscriptions:", error);
+        }
     }
 }
 
 
 // --- FACTORY ---
-// This allows us to have a single instance of the service per room ID.
 const services: { [roomId: string]: RoomService } = {};
 
 export const roomServiceFactory = {

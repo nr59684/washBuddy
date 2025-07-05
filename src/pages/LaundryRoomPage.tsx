@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
 import Modal from '../components/Modal';
 import { roomServiceFactory } from '../services/roomService';
+import { requestFCMToken, messaging, onMessage } from '../services/firebase';
 import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon } from '../components/icons';
 
 interface LaundryRoomPageProps {
@@ -12,13 +13,6 @@ interface LaundryRoomPageProps {
 }
 
 const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
-
-  const isNotificationSupported =
-    typeof window !== 'undefined' &&
-    'Notification' in window &&
-    typeof Notification.requestPermission === 'function';
-
-  type NotificationPermissionState = 'granted' | 'denied' | 'default' | 'unsupported';
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -38,70 +32,15 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeName, setNewModeName] = useState('');
   const [newModeDuration, setNewModeDuration] = useState('');
 
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>(
-    isNotificationSupported ? 'default' : 'unsupported'
-  );
-
-  useEffect(() => {
-  if (isNotificationSupported) {
-    try {
-      setNotificationPermission(Notification.permission);
-    } catch {
-      setNotificationPermission('unsupported');
-    }
-  }
-}, [isNotificationSupported]);
-
-  const [subscriptions, setSubscriptions] = useState<Set<'washer' | 'dryer'>>(() => {
-    try {
-        const saved = localStorage.getItem('washBuddySubs');
-        return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-        return new Set();
-    }
-  });
-
-  const notificationTimers = useRef<{ [key: number]: number }>({});
-  
   const roomService = useMemo(() => roomServiceFactory.getService(user.roomId, user.roomName), [user.roomId, user.roomName]);
 
-  // Effect to save subscriptions to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('washBuddySubs', JSON.stringify(Array.from(subscriptions)));
-    } catch (error) {
-        console.error("Could not save subscriptions to localStorage", error);
-    }
-  }, [subscriptions]);
+  const subscriptions = useMemo(() => {
+    return roomData?.members?.[user.username]?.subscriptions || { washer: false, dryer: false };
+  }, [roomData, user.username]);
 
-  const sendNotification = useCallback(
-    (title: string, options?: NotificationOptions) => {
-      if (!isNotificationSupported) {
-        console.warn('Notifications unsupported—skipping.');
-        return;
-      }
-      if (notificationPermission === 'granted') {
-        new Notification(title, {
-          ...options,
-          icon: 'https://i.imgur.com/O9N4p5p.png',
-          badge: 'https://i.imgur.com/O9N4p5p.png'
-        });
-      }
-    },
-    [notificationPermission]
-  );
-  
-  // This refactoring solves the stale closure problem.
-  // The effect now runs only once, and we use refs inside the callback
-  // to ensure we always have the latest state.
   useEffect(() => {
     let isMounted = true;
     
-    const roomDataRef = React.createRef<RoomData | null>();
-    roomDataRef.current = roomData;
-    const subscriptionsRef = React.createRef<Set<'washer' | 'dryer'>>();
-    subscriptionsRef.current = subscriptions;
-
     const initRoom = async () => {
       const initialData = await roomService.getRoomData();
       if (isMounted) {
@@ -113,28 +52,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     
     const unsubscribe = roomService.onDataChange((newData) => {
         if (!isMounted) return;
-
-        const prevData = roomDataRef.current;
-        const currentSubs = subscriptionsRef.current;
-
-        if (prevData && currentSubs) {
-            // Check for washer availability
-            const wasWasherBusy = prevData.machines.filter(m => m.type === 'washer').length > 0 && prevData.machines.filter(m => m.type === 'washer').every(m => m.status === 'In Use');
-            const isWasherAvailableNow = newData.machines.some(m => m.type === 'washer' && m.status === 'Available');
-            if (wasWasherBusy && isWasherAvailableNow && currentSubs.has('washer')) {
-                sendNotification('Washer Available!', { body: 'A washing machine is now free.' });
-                setSubscriptions(prev => { const s = new Set(prev); s.delete('washer'); return s; });
-            }
-
-            // Check for dryer availability
-            const wasDryerBusy = prevData.machines.filter(m => m.type === 'dryer').length > 0 && prevData.machines.filter(m => m.type === 'dryer').every(m => m.status === 'In Use');
-            const isDryerAvailableNow = newData.machines.some(m => m.type === 'dryer' && m.status === 'Available');
-            if (wasDryerBusy && isDryerAvailableNow && currentSubs.has('dryer')) {
-                sendNotification('Dryer Available!', { body: 'A dryer is now free.' });
-                setSubscriptions(prev => { const s = new Set(prev); s.delete('dryer'); return s; });
-            }
-        }
-        
         setRoomData(newData);
         if(isLoading) setIsLoading(false);
     });
@@ -143,9 +60,40 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       isMounted = false;
       unsubscribe();
     };
-  }, [roomService, sendNotification]); // This now only depends on stable functions/objects.
+  }, [roomService]);
+
+  // Effect for FCM setup and handling foreground messages
+  useEffect(() => {
+    if (!messaging) return;
+
+    // Handle messages when the app is in the foreground
+    const unsubscribeOnMessage = onMessage((payload: { notification?: { title?: string; body?: string } }) => {
+      console.log('Foreground message received. ', payload);
+      alert(`[Wash Buddy] ${payload.notification?.title}: ${payload.notification?.body}`);
+    });
+
+    const setupFCM = async () => {
+      await roomService.registerUser(user.username);
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          const token = await requestFCMToken();
+          if (token) {
+            await roomService.addUserToken(user.username, token);
+          }
+        }
+      } catch (error) {
+        console.error('Error setting up FCM:', error);
+      }
+    };
+    
+    setupFCM();
+
+    return () => {
+      unsubscribeOnMessage();
+    };
+  }, [user.username, roomService]);
   
-  // Display user object that is updated with the real room name once loaded
   const displayUser = useMemo(() => {
     if (roomData?.name && roomData.name !== user.roomName) {
         return { ...user, roomName: roomData.name };
@@ -153,23 +101,14 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     return user;
   }, [user, roomData]);
 
-  // Wrapper function to optimistically update local state and then push to the service
   const updateRoomAndService = (newRoomData: RoomData) => {
-      setRoomData(newRoomData); // Optimistic update for snappy UI
-      roomService.updateRoomData(newRoomData); // Push update to backend
+      setRoomData(newRoomData);
+      roomService.updateRoomData(newRoomData);
   };
-
-  const clearNotificationTimer = useCallback((machineId: number) => {
-    if (notificationTimers.current[machineId]) {
-      clearTimeout(notificationTimers.current[machineId]);
-      delete notificationTimers.current[machineId];
-    }
-  }, []);
 
   const updateMachineStatus = useCallback((id: number, status: MachineStatus, options?: { durationMinutes?: number; username?: string; }) => {
     if (!roomData) return;
     
-    const oldMachine = roomData.machines.find(m => m.id === id);
     const newMachines = roomData.machines.map(machine => {
       if (machine.id === id) {
         const finishTime = status === MachineStatus.InUse && options?.durationMinutes
@@ -178,8 +117,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
         
         const lastUsedBy = status === MachineStatus.InUse ? options?.username || machine.lastUsedBy : machine.lastUsedBy;
         
-        if (status !== MachineStatus.InUse) clearNotificationTimer(id);
-        
         return { ...machine, status, finishTime, lastUsedBy };
       }
       return machine;
@@ -187,75 +124,20 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newRoomData = { ...roomData, machines: newMachines };
     updateRoomAndService(newRoomData);
-
-    if (oldMachine && oldMachine.status !== status) {
-        const newMachine = newMachines.find(m => m.id === id)!;
-        if (status === MachineStatus.Finished) {
-          sendNotification(`✅ ${newMachine.name} has finished!`, { body: 'Time to collect your laundry.' });
-        }
-    }
-  }, [roomData, clearNotificationTimer, sendNotification]);
-  
-  const handleRequestNotificationPermission = async () => {
-  if (!isNotificationSupported) {
-    alert('Notifications are not supported in this browser/device.');
-    return 'denied';
-  }
-  if (Notification.permission === 'granted' || Notification.permission === 'denied') {
-    setNotificationPermission(Notification.permission);
-    return Notification.permission;
-  }
-  const permission = await Notification.requestPermission();
-  setNotificationPermission(permission);
-  return permission;
-};
+  }, [roomData, updateRoomAndService]);
   
   const handleSubscribe = async (type: 'washer' | 'dryer') => {
-    const permission = await handleRequestNotificationPermission();
-    if (permission !== 'granted') {
-       alert("Please enable browser notifications to use this feature.");
-       return;
-    }
-    setSubscriptions(prev => {
-       const newSubs = new Set(prev);
-       if (newSubs.has(type)) {
-         newSubs.delete(type);
-       } else {
-         newSubs.add(type);
-       }
-       return newSubs;
-    });
+    const currentSubState = subscriptions[type];
+    await roomService.updateUserSubscriptions(user.username, { [type]: !currentSubState });
   };
-
-  const schedulePreCompletionNotification = useCallback((machine: Machine, finishTime: number) => {
-    const preCompletionTime = finishTime - 5 * 60 * 1000;
-    const now = Date.now();
-
-    if (preCompletionTime > now) {
-      const timerId = window.setTimeout(() => {
-        sendNotification(`⏳ ${machine.name} finishes in 5 mins!`, { body: "Don't forget to collect your laundry soon." });
-      }, preCompletionTime - now);
-      notificationTimers.current[machine.id] = timerId;
-    }
-  }, [sendNotification]);
 
   const handleStartMachineWithDuration = async (machine: Machine, totalMinutes: number) => {
       if (totalMinutes <= 0) return;
 
-      const permission = await handleRequestNotificationPermission();
-      if (permission === 'denied') {
-          alert("You've blocked notifications. To get cycle alerts, please enable them in your browser settings.");
-      }
-
-      const finishTime = Date.now() + totalMinutes * 60 * 1000;
       updateMachineStatus(machine.id, MachineStatus.InUse, {
         durationMinutes: totalMinutes,
         username: user.username,
       });
-
-      if (permission === 'granted') {
-          schedulePreCompletionNotification(machine, finishTime);
-      }
       
       setIsDurationModalOpen(false);
       setMachineToStart(null);
@@ -317,7 +199,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const requestDeleteMachine = useCallback((machine: Machine) => { setMachineToDelete(machine); }, []);
   const handleConfirmDelete = () => {
     if (machineToDelete && roomData) {
-        clearNotificationTimer(machineToDelete.id);
         const newMachines = roomData.machines.filter(machine => machine.id !== machineToDelete.id);
         updateRoomAndService({ ...roomData, machines: newMachines });
         setMachineToDelete(null);
@@ -364,29 +245,23 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
             </div>
             
              <div className="flex justify-center gap-4 mb-6">
-                {allWashersBusy && isNotificationSupported && (
+                {allWashersBusy && (
                     <button 
                         onClick={() => handleSubscribe('washer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('washer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.washer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.has('washer') ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
+                        <span>{subscriptions.washer ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
                     </button>
                 )}
-                {allWashersBusy && !isNotificationSupported && (
-                  <p className="text-sm text-gray-500">Notifications not available on this device.</p>
-                )}
-                {allDryersBusy && isNotificationSupported && (
+                {allDryersBusy && (
                      <button 
                         onClick={() => handleSubscribe('dryer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('dryer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.dryer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.has('dryer') ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
+                        <span>{subscriptions.dryer ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
                     </button>
-                )}
-                {allDryersBusy && !isNotificationSupported && (
-                  <p className="text-sm text-gray-500">Notifications not available on this device.</p>
                 )}
             </div>
 
@@ -477,5 +352,3 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 };
 
 export default LaundryRoomPage;
-
-

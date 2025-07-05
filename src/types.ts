@@ -27,8 +27,17 @@ export interface WashMode {
   type: 'washer' | 'dryer';
 }
 
+export interface Member {
+  tokens: { [token: string]: boolean }; // Using keys for easy add/remove of tokens
+  subscriptions: {
+    washer: boolean;
+    dryer: boolean;
+  };
+}
+
 export interface RoomData {
   name: string;
   machines: Machine[];
   modes: WashMode[];
+  members: { [username: string]: Member };
 }

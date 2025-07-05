@@ -2,16 +2,13 @@
 {
   "short_name": "Wash Buddy",
   "name": "Wash Buddy - Dorm Laundry Tracker",
+  "gcm_sender_id": "103953800507",
   "icons": [
     {
       "src": "https://i.imgur.com/O9N4p5p.png",
       "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "https://i.imgur.com/O9N4p5p.png",
-      "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
   "start_url": ".",

@@ -1,0 +1,14 @@
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by akka.util.Unsafe (file:/Users/nileshparshotamrijhwani/.cache/firebase/emulators/firebase-database-emulator-v4.11.2.jar)
+WARNING: Please consider reporting this to the maintainers of class akka.util.Unsafe
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+15:35:08.522 [NamespaceSystem-akka.actor.default-dispatcher-4] INFO akka.event.slf4j.Slf4jLogger - Slf4jLogger started
+15:35:08.693 [main] INFO com.firebase.server.forge.App$ - Listening at 127.0.0.1:9000
+15:35:15.554 [NamespaceSystem-akka.actor.default-dispatcher-4] INFO com.firebase.core.namespace.NamespaceActor - washbuddy-7f682-default-rtdb successfully activated FBKV (SurveyIdle(0)) wait: 120ms, init: 0ms
+15:35:15.612 [NamespaceSystem-blocking-namespace-operation-dispatcher-6] INFO com.firebase.core.namespace.StateManager - Namespace washbuddy-7f682-default-rtdb status Active to Active
+15:35:15.722 [NamespaceSystem-blocking-namespace-operation-dispatcher-6] INFO com.firebase.core.namespace.StateManager - Namespace washbuddy-7f682-default-rtdb status Active to Active
+15:45:59.874 [FirebaseWorkerPool-1-3] WARN com.firebase.core.persistence.backend.dummy.EmulatorMetadataPersistence - Multiple projectIds are not recommended in single project mode. Requested 
+namespace your-project-id-default-rtdb, but the emulator is configured for washbuddy-7f682-default-rtdb. To 
+opt-out of single project mode add/set the singleProjectMode: false property in 
+the firebase.json emulators config. 
+15:45:59.888 [NamespaceSystem-akka.actor.default-dispatcher-11] INFO com.firebase.core.namespace.NamespaceActor - your-project-id-default-rtdb successfully activated FBKV (SurveyIdle(0)) wait: 6ms, init: 0ms
