@@ -144,11 +144,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       unsubscribe();
     };
   }, [roomService, sendNotification]); // This now only depends on stable functions/objects.
-
-  // Keep `notificationPermission` state up-to-date without causing effect re-runs
-  useEffect(() => {
-    setNotificationPermission(Notification.permission);
-  }, []);
   
   // Display user object that is updated with the real room name once loaded
   const displayUser = useMemo(() => {
