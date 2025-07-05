@@ -1,16 +1,21 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
 import Modal from '../components/Modal';
 import { roomServiceFactory } from '../services/roomService';
-import { requestFCMToken, messaging, onMessage } from '../services/firebase';
-import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon } from '../components/icons';
+import { notificationService } from '../services/notificationService';
+import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon } from '../components/icons';
+import { messaging } from '../services/firebase';
+import { getToken, onMessage } from 'firebase/messaging';
 
 interface LaundryRoomPageProps {
   user: User;
   onLogout: () => void;
 }
+
+type PushStatus = 'unsupported' | 'denied' | 'granted' | 'default' | 'loading';
 
 const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
   const [roomData, setRoomData] = useState<RoomData | null>(null);
@@ -32,19 +37,88 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeName, setNewModeName] = useState('');
   const [newModeDuration, setNewModeDuration] = useState('');
 
+  const [pushStatus, setPushStatus] = useState<PushStatus>('loading');
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  
+  const [subscriptions, setSubscriptions] = useState<Set<'washer' | 'dryer'>>(() => {
+    try {
+        const saved = localStorage.getItem('washBuddySubs');
+        return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+        return new Set();
+    }
+  });
+
   const roomService = useMemo(() => roomServiceFactory.getService(user.roomId, user.roomName), [user.roomId, user.roomName]);
 
-  const subscriptions = useMemo(() => {
-    return roomData?.members?.[user.username]?.subscriptions || { washer: false, dryer: false };
-  }, [roomData, user.username]);
+  const platformInfo = useMemo(() => ({
+    isIOS: notificationService.isIOS(),
+    isPushSupported: notificationService.isPushSupported(),
+  }), []);
 
+  // Effect to handle the PWA installation prompt
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      setInstallPrompt(e);
+      console.log('beforeinstallprompt event fired and stored');
+    };
+  
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Effect to save subscriptions to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('washBuddySubs', JSON.stringify(Array.from(subscriptions)));
+    } catch (error) {
+        console.error("Could not save subscriptions to localStorage", error);
+    }
+  }, [subscriptions]);
+  
+   // Effect for Push Notification status and foreground messages
+  useEffect(() => {
+    if (!messaging || platformInfo.isIOS) {
+      setPushStatus('unsupported');
+      return;
+    }
+    setPushStatus(Notification.permission);
+
+    // Listen for foreground messages
+    const unsubscribeOnMessage = onMessage(messaging, (payload) => {
+      console.log('Foreground message received.', payload);
+      const { title, body, icon } = payload.notification || {};
+      notificationService.sendWebNotification(title || 'New Message', { body, icon });
+    });
+
+    return () => {
+      unsubscribeOnMessage();
+    };
+  }, [platformInfo.isIOS]);
+  
+  // Effect to manage all data-driven notifications and badge updates
   useEffect(() => {
     let isMounted = true;
     
+    // Keep a ref to the previous data state to compare changes
+    const prevDataRef = React.createRef<RoomData | null>();
+    prevDataRef.current = roomData;
+    const subscriptionsRef = React.createRef<Set<'washer' | 'dryer'>>();
+    subscriptionsRef.current = subscriptions;
+
     const initRoom = async () => {
       const initialData = await roomService.getRoomData();
       if (isMounted) {
         setRoomData(initialData);
+        // On initial load, set the badge for any machines that are already finished.
+        const finishedCount = initialData.machines.filter(m => m.status === MachineStatus.Finished).length;
+        notificationService.updateAppBadge(finishedCount);
         setIsLoading(false);
       }
     };
@@ -52,6 +126,43 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     
     const unsubscribe = roomService.onDataChange((newData) => {
         if (!isMounted) return;
+
+        const prevData = prevDataRef.current;
+        const currentSubs = subscriptionsRef.current;
+        
+        // --- Update App Badge on every data change ---
+        const finishedCount = newData.machines.filter(m => m.status === MachineStatus.Finished).length;
+        notificationService.updateAppBadge(finishedCount);
+
+        // --- Handle data-driven notifications ---
+        if (prevData && currentSubs) {
+            // Check for available machine notifications (for subscribers)
+            const wasWasherBusy = prevData.machines.filter(m => m.type === 'washer').length > 0 && prevData.machines.filter(m => m.type === 'washer').every(m => m.status === 'In Use');
+            const isWasherAvailableNow = newData.machines.some(m => m.type === 'washer' && m.status === 'Available');
+            if (wasWasherBusy && isWasherAvailableNow && currentSubs.has('washer')) {
+                notificationService.sendWebNotification('Washer Available!', { body: 'A washing machine is now free.' });
+                setSubscriptions(prev => { const s = new Set(prev); s.delete('washer'); return s; });
+            }
+
+            const wasDryerBusy = prevData.machines.filter(m => m.type === 'dryer').length > 0 && prevData.machines.filter(m => m.type === 'dryer').every(m => m.status === 'In Use');
+            const isDryerAvailableNow = newData.machines.some(m => m.type === 'dryer' && m.status === 'Available');
+            if (wasDryerBusy && isDryerAvailableNow && currentSubs.has('dryer')) {
+                notificationService.sendWebNotification('Dryer Available!', { body: 'A dryer is now free.' });
+                setSubscriptions(prev => { const s = new Set(prev); s.delete('dryer'); return s; });
+            }
+
+            // Check for machines that just finished their cycle
+            newData.machines.forEach(newMachine => {
+              const oldMachine = prevData.machines.find(m => m.id === newMachine.id);
+              if (oldMachine && oldMachine.status === MachineStatus.InUse && newMachine.status === MachineStatus.Finished) {
+                  notificationService.sendWebNotification(`✅ ${newMachine.name} has finished!`, { 
+                      body: 'Time to collect your laundry.',
+                      tag: `machine-finished-${newMachine.id}` // Tag prevents duplicate notifications
+                  });
+              }
+            });
+        }
+        
         setRoomData(newData);
         if(isLoading) setIsLoading(false);
     });
@@ -59,41 +170,12 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     return () => {
       isMounted = false;
       unsubscribe();
+      notificationService.updateAppBadge(0); // Clear badge when the user leaves
     };
   }, [roomService]);
 
-  // Effect for FCM setup and handling foreground messages
-  useEffect(() => {
-    if (!messaging) return;
 
-    // Handle messages when the app is in the foreground
-    const unsubscribeOnMessage = onMessage((payload: { notification?: { title?: string; body?: string } }) => {
-      console.log('Foreground message received. ', payload);
-      alert(`[Wash Buddy] ${payload.notification?.title}: ${payload.notification?.body}`);
-    });
-
-    const setupFCM = async () => {
-      await roomService.registerUser(user.username);
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          const token = await requestFCMToken();
-          if (token) {
-            await roomService.addUserToken(user.username, token);
-          }
-        }
-      } catch (error) {
-        console.error('Error setting up FCM:', error);
-      }
-    };
-    
-    setupFCM();
-
-    return () => {
-      unsubscribeOnMessage();
-    };
-  }, [user.username, roomService]);
-  
+  // Display user object that is updated with the real room name once loaded
   const displayUser = useMemo(() => {
     if (roomData?.name && roomData.name !== user.roomName) {
         return { ...user, roomName: roomData.name };
@@ -102,7 +184,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   }, [user, roomData]);
 
   const updateRoomAndService = (newRoomData: RoomData) => {
-      setRoomData(newRoomData);
+      setRoomData(newRoomData); 
       roomService.updateRoomData(newRoomData);
   };
 
@@ -124,15 +206,40 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newRoomData = { ...roomData, machines: newMachines };
     updateRoomAndService(newRoomData);
-  }, [roomData, updateRoomAndService]);
+  }, [roomData]);
+  
+  const handleRequestLocalNotificationPermission = async () => {
+    if (!('Notification' in window)) return 'denied';
+    if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+      return Notification.permission;
+    }
+    return await Notification.requestPermission();
+  };
   
   const handleSubscribe = async (type: 'washer' | 'dryer') => {
-    const currentSubState = subscriptions[type];
-    await roomService.updateUserSubscriptions(user.username, { [type]: !currentSubState });
+    const permission = await handleRequestLocalNotificationPermission();
+    if (permission !== 'granted') {
+       alert("Please enable browser notifications to use this feature.");
+       return;
+    }
+    setSubscriptions(prev => {
+       const newSubs = new Set(prev);
+       if (newSubs.has(type)) {
+         newSubs.delete(type);
+       } else {
+         newSubs.add(type);
+       }
+       return newSubs;
+    });
   };
 
   const handleStartMachineWithDuration = async (machine: Machine, totalMinutes: number) => {
       if (totalMinutes <= 0) return;
+
+      const permission = await handleRequestLocalNotificationPermission();
+      if (permission === 'denied') {
+          alert("You've blocked local notifications. To get cycle alerts, please enable them in your browser settings.");
+      }
 
       updateMachineStatus(machine.id, MachineStatus.InUse, {
         durationMinutes: totalMinutes,
@@ -215,57 +322,121 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       return { roomMembers: users, allWashersBusy, allDryersBusy };
   }, [roomData]);
   
+  // PWA Install Handler
+  const handleInstallClick = async () => {
+    if (!installPrompt) {
+      return;
+    }
+    // Show the browser's installation prompt
+    installPrompt.prompt();
+    // Wait for the user to respond
+    const { outcome } = await installPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+    // We've used the prompt, and can't use it again, so clear it
+    setInstallPrompt(null);
+  };
+
+  // Push Notification Handlers
+  const handleEnablePush = async () => {
+    if (!messaging) return;
+    setPushStatus('loading');
+    try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            const vapidKey = (import.meta as any).env.VITE_FIREBASE_VAPID_KEY;
+            if (!vapidKey) {
+                console.error("VAPID key is missing. Add VITE_FIREBASE_VAPID_KEY to your .env file.");
+                alert("Push notification setup is incomplete on the server. Please contact the administrator.");
+                setPushStatus('default');
+                return;
+            }
+            const currentToken = await getToken(messaging, { vapidKey: vapidKey });
+            if (currentToken) {
+                await roomService.addFCMToken(currentToken);
+                setPushStatus('granted');
+                alert("Push notifications have been enabled for this device!");
+            } else {
+                console.error('No registration token available. Request permission to generate one.');
+                setPushStatus('default');
+            }
+        } else {
+            console.log('Notification permission denied.');
+            setPushStatus('denied');
+        }
+    } catch (err) {
+        console.error('An error occurred while retrieving token. ', err);
+        setPushStatus('default');
+    }
+  };
+
+  const handleDisablePush = async () => {
+      if (!messaging) return;
+      setPushStatus('loading');
+      try {
+        const vapidKey = (import.meta as any).env.VITE_FIREBASE_VAPID_KEY;
+        const currentToken = await getToken(messaging, { vapidKey });
+        if (currentToken) {
+            await roomService.removeFCMToken(currentToken);
+        }
+        setPushStatus('default'); 
+        alert("Push notifications have been disabled for this device.");
+      } catch (err) {
+        console.error('An error occurred while disabling notifications. ', err);
+        setPushStatus('granted'); // Revert on error
+      }
+  };
+
   const machines = roomData?.machines ?? [];
   const washModes = roomData?.modes ?? [];
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <Header user={displayUser} onLogout={onLogout} />
-      <main className="flex-grow container mx-auto p-3 sm:p-4 md:p-6 lg:p-8">
+      <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8">
         <div>
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-800 flex items-center self-start sm:self-center">
-                <WasherIcon className="w-7 h-7 sm:w-8 sm:h-8 mr-3 text-sky-600 flex-shrink-0" />
-                <span title={roomData?.name}>{isLoading ? "Loading..." : roomData?.name}</span>
+            <div className="flex justify-between items-center mb-4 gap-2">
+              <h2 className="text-2xl font-bold text-slate-800 flex items-center truncate">
+                <WasherIcon className="w-8 h-8 mr-3 text-sky-600 flex-shrink-0" />
+                <span className="truncate" title={roomData?.name}>{isLoading ? "Loading..." : roomData?.name}</span>
               </h2>
-              <div className="flex items-center gap-2 self-end sm:self-center flex-shrink-0">
-                <button onClick={() => setIsSettingsModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold p-2 sm:px-4 sm:py-2 rounded-lg transition-colors" title="Room Settings">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => setIsSettingsModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition-colors" title="Room Settings">
                   <SettingsIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Settings</span>
                 </button>
-                <button onClick={() => setIsMembersModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold p-2 sm:px-4 sm:py-2 rounded-lg transition-colors" title="View room members">
+                <button onClick={() => setIsMembersModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition-colors" title="View room members">
                   <UsersIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Members</span>
                 </button>
-                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold p-2 sm:px-4 sm:py-2 rounded-lg transition-colors" title="Add a new machine">
+                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors" title="Add a new machine">
                   <PlusCircleIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Add Machine</span>
                 </button>
               </div>
             </div>
             
-             <div className="flex flex-wrap justify-center gap-4 mb-6">
+             <div className="flex justify-center gap-4 mb-6">
                 {allWashersBusy && (
                     <button 
                         onClick={() => handleSubscribe('washer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.washer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('washer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.washer ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
+                        <span>{subscriptions.has('washer') ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
                     </button>
                 )}
                 {allDryersBusy && (
                      <button 
                         onClick={() => handleSubscribe('dryer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.dryer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('dryer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.dryer ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
+                        <span>{subscriptions.has('dryer') ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
                     </button>
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {machines.map(machine => (<MachineCard key={machine.id} machine={machine} user={user} onUpdateStatus={updateMachineStatus} onDelete={requestDeleteMachine} onRequestStart={requestStartMachine} />))}
               {machines.length === 0 && !isLoading && (
                 <div className="md:col-span-2 lg:col-span-3 xl:col-span-4 text-center py-12 px-6 bg-white rounded-lg shadow-sm">
@@ -317,9 +488,61 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       </Modal>
 
       <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Room Settings & Modes">
-        <div className="space-y-8 max-h-[60vh] overflow-y-auto pr-2">
+        <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 divide-y divide-slate-200">
+            <div className="pt-2">
+                <h3 className="text-lg font-semibold text-slate-800 pb-2 mb-3 flex items-center gap-2"><DownloadIcon className="w-5 h-5"/> App Installation</h3>
+                {installPrompt ? (
+                  <div className="bg-sky-50 p-4 rounded-lg text-center">
+                    <p className="font-medium text-sky-800 mb-3">Install Wash Buddy to your device for easy access and offline use.</p>
+                    <button onClick={handleInstallClick} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors flex items-center justify-center gap-2">
+                      <DownloadIcon className="w-5 h-5"/>
+                      Install App
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 text-center px-4">This app has been installed or your browser doesn't support direct installation. You can add it to your home screen via the browser menu.</p>
+                )}
+            </div>
+
+            <div className="pt-6">
+                <h3 className="text-lg font-semibold text-slate-800 pb-2 mb-3 flex items-center gap-2"><BellIcon className="w-5 h-5"/> Notifications</h3>
+                {platformInfo.isIOS ? (
+                   <div className="bg-sky-50 p-4 rounded-lg text-center">
+                     <p className="font-medium text-sky-800 mb-2">Enable Home Screen Alerts</p>
+                     <p className="text-sm text-sky-700">
+                         On iOS, add this app to your Home Screen to get badge notifications when your laundry is done.
+                         Push notifications are not supported.
+                     </p>
+                   </div>
+                ) : (
+                  <div className="bg-slate-100 p-4 rounded-lg">
+                      {pushStatus === 'granted' && (
+                          <div className="text-center">
+                              <p className="font-medium text-green-700 mb-3">Push notifications are enabled for this device.</p>
+                              <button onClick={handleDisablePush} className="w-full px-4 py-2 bg-red-500 text-white font-semibold rounded-md hover:bg-red-600 transition-colors">Disable Notifications</button>
+                          </div>
+                      )}
+                      {pushStatus === 'default' && (
+                          <div className="text-center">
+                              <p className="font-medium text-slate-700 mb-3">Get notified even when the app is closed.</p>
+                              <button onClick={handleEnablePush} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors">Enable Push Notifications</button>
+                          </div>
+                      )}
+                      {pushStatus === 'denied' && (
+                           <p className="font-medium text-red-700 text-center">You have blocked notifications. Please enable them in your browser settings to use this feature.</p>
+                      )}
+                      {pushStatus === 'unsupported' && (
+                           <p className="font-medium text-slate-500 text-center">Push notifications are not supported on this browser.</p>
+                      )}
+                      {pushStatus === 'loading' && (
+                          <p className="font-medium text-slate-500 text-center animate-pulse">Loading...</p>
+                      )}
+                  </div>
+                )}
+            </div>
+
             {[ 'washer', 'dryer' ].map(type => (
-                <div key={type}>
+                <div key={type} className="pt-6">
                     <h3 className="capitalize text-lg font-semibold text-slate-800 border-b pb-2 mb-3">{type} Modes</h3>
                     <ul className="space-y-2 mb-4">
                         {washModes.filter(m => m.type === type).map(mode => (

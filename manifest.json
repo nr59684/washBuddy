@@ -5,10 +5,14 @@
   "gcm_sender_id": "103953800507",
   "icons": [
     {
-      "src": "https://i.imgur.com/O9N4p5p.png",
+      "src": "icons/icon-192x192.png",
       "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any maskable"
+      "sizes": "192x192"
+    },
+    {
+      "src": "icons/icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512"
     }
   ],
   "start_url": ".",
