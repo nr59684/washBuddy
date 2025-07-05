@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { SparklesIcon, UserIcon, PlusCircleIcon, LogInIcon } from '../components/icons';
+import { SparklesIcon, UserIcon, PlusCircleIcon, LogInIcon, DownloadIcon } from '../components/icons';
 
 interface LandingPageProps {
-  onCreateRoom: (username: string, roomName:string) => void;
+  onCreateRoom: (username: string, roomName: string) => void;
   onJoinRoom: (username: string, roomId: string) => void;
+  installPrompt: any;
+  onInstallClick: () => void;
 }
 
-const LandingPage: React.FC<LandingPageProps> = ({ onCreateRoom, onJoinRoom }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onCreateRoom, onJoinRoom, installPrompt, onInstallClick }) => {
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState('');
   const [roomName, setRoomName] = useState('');
@@ -40,9 +42,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onCreateRoom, onJoinRoom }) =
       <div className="text-center mb-8">
         <div className="flex items-center justify-center mb-4">
           <SparklesIcon className="w-12 h-12 text-sky-500 mr-3"/>
-          <h1 className="text-4xl sm:text-5xl font-bold text-slate-800">Wash Buddy</h1>
+          <h1 className="text-5xl font-bold text-slate-800">Wash Buddy</h1>
         </div>
-        <p className="text-slate-600 text-base sm:text-lg">Your smart solution for dorm laundry.</p>
+        <p className="text-slate-600 text-lg">Your smart solution for dorm laundry.</p>
       </div>
 
       <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg transition-all duration-500">
@@ -144,14 +146,26 @@ const LandingPage: React.FC<LandingPageProps> = ({ onCreateRoom, onJoinRoom }) =
             <p className="font-medium">Created by Nilesh Parshotam Rijhwani</p>
             <p>Wash Buddy &copy; 2024</p>
           </div>
-          <a href="https://www.buymeacoffee.com/nileshRijhwani" target="_blank" rel="noopener noreferrer" title="Support the creator">
-            <img 
-                src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" 
-                alt="Buy Me A Coffee" 
-                style={{ height: '40px' }}
-                className="rounded-lg shadow-sm hover:shadow-md transition-shadow"
-            />
-          </a>
+          <div className="flex items-center gap-4">
+            {installPrompt && (
+                <button 
+                    onClick={onInstallClick}
+                    className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm"
+                    title="Install Wash Buddy App"
+                >
+                    <DownloadIcon className="w-5 h-5" />
+                    Install App
+                </button>
+            )}
+            <a href="https://www.buymeacoffee.com/nileshRijhwani" target="_blank" rel="noopener noreferrer" title="Support the creator">
+              <img 
+                  src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" 
+                  alt="Buy Me A Coffee" 
+                  style={{ height: '40px' }}
+                  className="rounded-lg shadow-sm hover:shadow-md transition-shadow"
+              />
+            </a>
+          </div>
         </div>
       </footer>
     </div>

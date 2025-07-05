@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import LandingPage from './pages/LandingPage';
 import LaundryRoomPage from './pages/LaundryRoomPage';
@@ -12,6 +11,7 @@ interface StoredUser {
 
 const App: React.FC = () => {
   const [user, setUser] = useState<StoredUser | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   // Check for existing user session on mount
   useEffect(() => {
@@ -25,6 +25,38 @@ const App: React.FC = () => {
     }
   }, []);
   
+  // Listen for the PWA install prompt
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault(); // Prevent the mini-infobar from appearing on mobile
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = () => {
+    if (!installPrompt) return;
+    
+    // Show the browser's installation prompt
+    installPrompt.prompt();
+
+    // Wait for the user to respond to the prompt
+    installPrompt.userChoice.then((choiceResult: { outcome: 'accepted' | 'dismissed' }) => {
+      if (choiceResult.outcome === 'accepted') {
+        console.log('User accepted the PWA installation');
+      } else {
+        console.log('User dismissed the PWA installation');
+      }
+      // The prompt can only be used once. Clear it.
+      setInstallPrompt(null);
+    });
+  };
+
   const handleLoginAndCreateRoom = (username: string, roomName: string) => {
     // Generate a new 8-digit room code
     const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
@@ -68,7 +100,12 @@ const App: React.FC = () => {
 
 
   if (!userForPage) {
-    return <LandingPage onJoinRoom={handleLoginAndJoinRoom} onCreateRoom={handleLoginAndCreateRoom} />;
+    return <LandingPage 
+      onJoinRoom={handleLoginAndJoinRoom} 
+      onCreateRoom={handleLoginAndCreateRoom} 
+      installPrompt={installPrompt}
+      onInstallClick={handleInstallClick}
+    />;
   }
 
   return <LaundryRoomPage user={userForPage} onLogout={handleLogout} />;
