@@ -108,7 +108,12 @@ const App: React.FC = () => {
     />;
   }
 
-  return <LaundryRoomPage user={userForPage} onLogout={handleLogout} />;
+  return (
+    <LaundryRoomPage
+      user={userForPage}
+      onLogout={handleLogout}
+    />
+  );
 };
 
 export default App;
