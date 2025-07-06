@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
@@ -7,8 +6,6 @@ import Modal from '../components/Modal';
 import { roomServiceFactory } from '../services/roomService';
 import { notificationService } from '../services/notificationService';
 import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon } from '../components/icons';
-import { messaging } from '../services/firebase';
-import { getToken, onMessage } from 'firebase/messaging';
 
 interface LaundryRoomPageProps {
   user: User;
@@ -16,6 +13,23 @@ interface LaundryRoomPageProps {
 }
 
 type PushStatus = 'unsupported' | 'denied' | 'granted' | 'default' | 'loading';
+
+// Helper to convert VAPID key
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 
 const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
   const [roomData, setRoomData] = useState<RoomData | null>(null);
@@ -52,7 +66,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e);
-      console.log('beforeinstallprompt event fired and stored');
     };
   
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -62,25 +75,23 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     };
   }, []);
   
-   // Effect for Push Notification status and foreground messages
+   // Effect for Push Notification status
   useEffect(() => {
-    if (!messaging || platformInfo.isIOS) {
+    if (!platformInfo.isPushSupported) {
       setPushStatus('unsupported');
       return;
     }
-    setPushStatus(Notification.permission);
 
-    // Listen for foreground messages
-    const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-      console.log('Foreground message received.', payload);
-      const { title, body, icon } = payload.notification || {};
-      notificationService.sendWebNotification(title || 'New Message', { body, icon });
+    navigator.serviceWorker.ready.then(registration => {
+        registration.pushManager.getSubscription().then(subscription => {
+            if (subscription) {
+                setPushStatus('granted');
+            } else {
+                setPushStatus(Notification.permission);
+            }
+        });
     });
-
-    return () => {
-      unsubscribeOnMessage();
-    };
-  }, [platformInfo.isIOS]);
+  }, [platformInfo.isPushSupported]);
   
   // Effect to manage all data-driven notifications and badge updates
   useEffect(() => {
@@ -260,45 +271,41 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
   // Push Notification Handlers
   const handleEnablePush = async () => {
-    if (!messaging) return;
     setPushStatus('loading');
+    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+    if (!vapidKey) {
+      console.error("VAPID public key not found. Push notifications cannot be enabled.");
+      alert("Push notifications are not configured correctly. Please contact the administrator.");
+      setPushStatus('default');
+      return;
+    }
+
     try {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-            const vapidKey = (import.meta as any).env.VITE_FIREBASE_VAPID_KEY;
-            if (!vapidKey) {
-                console.error("VAPID key is missing. Add VITE_FIREBASE_VAPID_KEY to your .env file.");
-                alert("Push notification setup is incomplete on the server. Please contact the administrator.");
-                setPushStatus('default');
-                return;
-            }
-            const currentToken = await getToken(messaging, { vapidKey: vapidKey });
-            if (currentToken) {
-                await roomService.addFCMToken(user.username, currentToken);
-                setPushStatus('granted');
-                alert("Push notifications have been enabled for this device!");
-            } else {
-                console.error('No registration token available. Request permission to generate one.');
-                setPushStatus('default');
-            }
-        } else {
-            console.log('Notification permission denied.');
-            setPushStatus('denied');
-        }
-    } catch (err) {
-        console.error('An error occurred while retrieving token. ', err);
-        setPushStatus('default');
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      });
+
+      await roomService.addPushSubscription(user.username, subscription);
+      setPushStatus('granted');
+      alert("Push notifications enabled!");
+    } catch (error) {
+      console.error('Error subscribing to push notifications:', error);
+      const permission = await navigator.permissions.query({ name: 'push' });
+      setPushStatus(permission.state as PushStatus);
+      alert('Failed to enable push notifications. Please check your browser settings.');
     }
   };
 
   const handleDisablePush = async () => {
-      if (!messaging) return;
       setPushStatus('loading');
       try {
-        const vapidKey = (import.meta as any).env.VITE_FIREBASE_VAPID_KEY;
-        const currentToken = await getToken(messaging, { vapidKey });
-        if (currentToken) {
-            await roomService.removeFCMToken(user.username, currentToken);
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+            await subscription.unsubscribe();
+            await roomService.removePushSubscription(user.username, subscription);
         }
         setPushStatus('default'); 
         alert("Push notifications have been disabled for this device.");
@@ -432,11 +439,12 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                    <div className="bg-sky-50 p-4 rounded-lg text-center">
                      <p className="font-medium text-sky-800 mb-2">Enable Home Screen Alerts</p>
                      <p className="text-sm text-sky-700">
-                         On iOS, add this app to your Home Screen to get badge notifications when your laundry is done.
-                         Push notifications are not supported.
+                         On iOS, add this app to your Home Screen to get badge & push notifications when your laundry is done.
                      </p>
                    </div>
-                ) : (
+                ) : null}
+
+                { platformInfo.isPushSupported ? (
                   <div className="bg-slate-100 p-4 rounded-lg">
                       {pushStatus === 'granted' && (
                           <div className="text-center">
@@ -453,13 +461,12 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                       {pushStatus === 'denied' && (
                            <p className="font-medium text-red-700 text-center">You have blocked notifications. Please enable them in your browser settings to use this feature.</p>
                       )}
-                      {pushStatus === 'unsupported' && (
-                           <p className="font-medium text-slate-500 text-center">Push notifications are not supported on this browser.</p>
-                      )}
                       {pushStatus === 'loading' && (
                           <p className="font-medium text-slate-500 text-center animate-pulse">Loading...</p>
                       )}
                   </div>
+                ) : (
+                    !platformInfo.isIOS && <p className="font-medium text-slate-500 text-center">Push notifications are not supported on this browser.</p>
                 )}
             </div>
 

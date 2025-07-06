@@ -46,36 +46,7 @@ export default defineConfig(({ mode }) => {
           }
         ]
       }
-    }),
-      {
-        name: 'replace-env-in-sw',
-        // This hook runs after the entire bundle has been generated.
-        writeBundle(options) {
-          if (!options.dir) {
-            console.error('vite-plugin-replace-env-in-sw: options.dir is not defined.');
-            return;
-          }
-          const swPath = resolve(options.dir, 'firebase-messaging-sw.js');
-          
-          try {
-            let swCode = readFileSync(swPath, 'utf-8');
-            Object.keys(env).forEach((key) => {
-              if (key.startsWith('VITE_')) {
-                const regex = new RegExp(`%${key}%`, 'g');
-                swCode = swCode.replace(regex, env[key]);
-              }
-            });
-            writeFileSync(swPath, swCode);
-            console.log('Successfully replaced environment variables in service worker.');
-          } catch (error) {
-            // It might fail if the file doesn't exist, which is fine during dev.
-            if (mode !== 'development') {
-                console.error('Failed to replace environment variables in service worker:', error);
-            }
-          }
-        },
-      },
-    ],
+    })],
     base: '/', // IMPORTANT: Change 'wash-buddy' to your exact GitHub repository name
   }
 })

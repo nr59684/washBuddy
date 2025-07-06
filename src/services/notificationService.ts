@@ -6,8 +6,7 @@ const isIOS = () => {
 
 const isPushSupported = () => {
     try {
-        // Push notifications are not supported on iOS web, so we explicitly check for that.
-        return 'Notification' in window && 'serviceWorker' in navigator && !isIOS();
+        return 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
     } catch (e) {
         return false;
     }

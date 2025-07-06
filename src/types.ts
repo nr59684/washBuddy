@@ -28,7 +28,8 @@ export interface WashMode {
 }
 
 export interface Member {
-  tokens: { [token: string]: boolean }; // Using keys for easy add/remove of tokens
+  // Use a map to store multiple push subscriptions per user, keyed by endpoint.
+  pushSubscriptions?: { [endpoint: string]: PushSubscriptionJSON };
   subscriptions: {
     washer: boolean;
     dryer: boolean;

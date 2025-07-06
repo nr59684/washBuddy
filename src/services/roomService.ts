@@ -7,8 +7,8 @@ interface RoomService {
     getRoomData(): Promise<RoomData>;
     updateRoomData(data: RoomData): Promise<void>;
     onDataChange(callback: (data: RoomData) => void): () => void; // Returns an unsubscribe function
-    addFCMToken(username: string, token: string): Promise<void>;
-    removeFCMToken(username: string, token: string): Promise<void>;
+    addPushSubscription(username: string, subscription: PushSubscription): Promise<void>;
+    removePushSubscription(username: string, subscription: PushSubscription): Promise<void>;
     updateSubscription(username: string, type: 'washer' | 'dryer', isSubscribed: boolean): Promise<void>;
 }
 
@@ -95,37 +95,34 @@ class FirebaseRoomService implements RoomService {
         };
     }
 
-    async addFCMToken(username: string, token: string): Promise<void> {
-        if (!username) return;
+    async addPushSubscription(username: string, subscription: PushSubscription): Promise<void> {
+        if (!username || !subscription.endpoint) return;
+        const subAsJson = subscription.toJSON();
+        // Sanitize the endpoint URL to use as a Firebase key
+        if (!subAsJson.endpoint) {
+            console.error("Push subscription endpoint is undefined.");
+            return;
+        }
+        const key = subAsJson.endpoint.substring(0, 100).replace(/[.$#\[\]\/]/g, '_');
+        const subscriptionRef = ref(db, `rooms/${this.roomId}/members/${username}/pushSubscriptions/${key}`);
         try {
-            const memberRef = ref(db, `rooms/${this.roomId}/members/${username}`);
-            const snapshot = await get(memberRef);
-            if (!snapshot.exists()) {
-                // If member doesn't exist, create them with the token
-                await set(memberRef, {
-                    tokens: { [token]: true },
-                    subscriptions: { washer: false, dryer: false }
-                });
-            } else {
-                // If member exists, just add the token
-                const tokenRef = ref(db, `rooms/${this.roomId}/members/${username}/tokens/${token}`);
-                await set(tokenRef, true);
-            }
+            await set(subscriptionRef, subAsJson);
         } catch (error) {
-            console.error("Failed to save FCM token:", error);
+            console.error("Failed to save push subscription:", error);
         }
     }
 
-    async removeFCMToken(username: string, token: string): Promise<void> {
-        if (!username || !token) return;
+    async removePushSubscription(username: string, subscription: PushSubscription): Promise<void> {
+        if (!username || !subscription.endpoint) return;
+        const key = subscription.endpoint.substring(0, 100).replace(/[.$#\[\]\/]/g, '_');
+        const subscriptionRef = ref(db, `rooms/${this.roomId}/members/${username}/pushSubscriptions/${key}`);
         try {
-            const tokenRef = ref(db, `rooms/${this.roomId}/members/${username}/tokens/${token}`);
-            await set(tokenRef, null); // Using set with null to delete the key
+            await set(subscriptionRef, null); // Set to null to delete
         } catch (error) {
-            console.error("Failed to remove FCM token:", error);
+            console.error("Failed to remove push subscription:", error);
         }
     }
-
+    
     async updateSubscription(username: string, type: 'washer' | 'dryer', isSubscribed: boolean): Promise<void> {
         if (!username) return;
         try {
