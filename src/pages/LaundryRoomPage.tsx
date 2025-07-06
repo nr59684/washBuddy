@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
@@ -172,7 +173,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const handleStartMachineWithDuration = async (machine: Machine, totalMinutes: number) => {
       if (totalMinutes <= 0) return;
 
-      if (Notification.permission === 'denied') {
+      if ('Notification' in window && Notification.permission === 'denied') {
           alert("You've blocked notifications. To get cycle alerts, please enable them in your browser settings.");
       }
 
