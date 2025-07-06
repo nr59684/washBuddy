@@ -4,7 +4,7 @@
 
 const CACHE_NAME = 'wash-buddy-cache-v1';
 // IMPORTANT: The base URL must match the `base` property in vite.config.ts
-const BASE_URL = '/wash-buddy/'; 
+const BASE_URL = '/'; 
 const URLS_TO_PRECACHE = [
   BASE_URL,
   `${BASE_URL}index.html`,

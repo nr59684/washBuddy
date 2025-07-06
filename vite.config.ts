@@ -25,8 +25,8 @@ export default defineConfig(({ mode }) => {
         theme_color: '#0284c7',
         background_color: '#f1f5f9',
         display: 'standalone',
-        scope: '.',
-        start_url: '.',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: 'https://i.imgur.com/O9N4p5p.png',

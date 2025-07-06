@@ -40,15 +40,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [pushStatus, setPushStatus] = useState<PushStatus>('loading');
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   
-  const [subscriptions, setSubscriptions] = useState<Set<'washer' | 'dryer'>>(() => {
-    try {
-        const saved = localStorage.getItem('washBuddySubs');
-        return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-        return new Set();
-    }
-  });
-
   const roomService = useMemo(() => roomServiceFactory.getService(user.roomId, user.roomName), [user.roomId, user.roomName]);
 
   const platformInfo = useMemo(() => ({
@@ -59,9 +50,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   // Effect to handle the PWA installation prompt
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
-      // Stash the event so it can be triggered later.
       setInstallPrompt(e);
       console.log('beforeinstallprompt event fired and stored');
     };
@@ -72,15 +61,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
-
-  // Effect to save subscriptions to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('washBuddySubs', JSON.stringify(Array.from(subscriptions)));
-    } catch (error) {
-        console.error("Could not save subscriptions to localStorage", error);
-    }
-  }, [subscriptions]);
   
    // Effect for Push Notification status and foreground messages
   useEffect(() => {
@@ -105,18 +85,11 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   // Effect to manage all data-driven notifications and badge updates
   useEffect(() => {
     let isMounted = true;
-    
-    // Keep a ref to the previous data state to compare changes
-    const prevDataRef = React.createRef<RoomData | null>();
-    prevDataRef.current = roomData;
-    const subscriptionsRef = React.createRef<Set<'washer' | 'dryer'>>();
-    subscriptionsRef.current = subscriptions;
 
     const initRoom = async () => {
       const initialData = await roomService.getRoomData();
       if (isMounted) {
         setRoomData(initialData);
-        // On initial load, set the badge for any machines that are already finished.
         const finishedCount = initialData.machines.filter(m => m.status === MachineStatus.Finished).length;
         notificationService.updateAppBadge(finishedCount);
         setIsLoading(false);
@@ -126,42 +99,9 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     
     const unsubscribe = roomService.onDataChange((newData) => {
         if (!isMounted) return;
-
-        const prevData = prevDataRef.current;
-        const currentSubs = subscriptionsRef.current;
         
-        // --- Update App Badge on every data change ---
         const finishedCount = newData.machines.filter(m => m.status === MachineStatus.Finished).length;
         notificationService.updateAppBadge(finishedCount);
-
-        // --- Handle data-driven notifications ---
-        if (prevData && currentSubs) {
-            // Check for available machine notifications (for subscribers)
-            const wasWasherBusy = prevData.machines.filter(m => m.type === 'washer').length > 0 && prevData.machines.filter(m => m.type === 'washer').every(m => m.status === 'In Use');
-            const isWasherAvailableNow = newData.machines.some(m => m.type === 'washer' && m.status === 'Available');
-            if (wasWasherBusy && isWasherAvailableNow && currentSubs.has('washer')) {
-                notificationService.sendWebNotification('Washer Available!', { body: 'A washing machine is now free.' });
-                setSubscriptions(prev => { const s = new Set(prev); s.delete('washer'); return s; });
-            }
-
-            const wasDryerBusy = prevData.machines.filter(m => m.type === 'dryer').length > 0 && prevData.machines.filter(m => m.type === 'dryer').every(m => m.status === 'In Use');
-            const isDryerAvailableNow = newData.machines.some(m => m.type === 'dryer' && m.status === 'Available');
-            if (wasDryerBusy && isDryerAvailableNow && currentSubs.has('dryer')) {
-                notificationService.sendWebNotification('Dryer Available!', { body: 'A dryer is now free.' });
-                setSubscriptions(prev => { const s = new Set(prev); s.delete('dryer'); return s; });
-            }
-
-            // Check for machines that just finished their cycle
-            newData.machines.forEach(newMachine => {
-              const oldMachine = prevData.machines.find(m => m.id === newMachine.id);
-              if (oldMachine && oldMachine.status === MachineStatus.InUse && newMachine.status === MachineStatus.Finished) {
-                  notificationService.sendWebNotification(`✅ ${newMachine.name} has finished!`, { 
-                      body: 'Time to collect your laundry.',
-                      tag: `machine-finished-${newMachine.id}` // Tag prevents duplicate notifications
-                  });
-              }
-            });
-        }
         
         setRoomData(newData);
         if(isLoading) setIsLoading(false);
@@ -208,37 +148,21 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     updateRoomAndService(newRoomData);
   }, [roomData]);
   
-  const handleRequestLocalNotificationPermission = async () => {
-    if (!('Notification' in window)) return 'denied';
-    if (Notification.permission === 'granted' || Notification.permission === 'denied') {
-      return Notification.permission;
-    }
-    return await Notification.requestPermission();
-  };
-  
   const handleSubscribe = async (type: 'washer' | 'dryer') => {
-    const permission = await handleRequestLocalNotificationPermission();
-    if (permission !== 'granted') {
-       alert("Please enable browser notifications to use this feature.");
+    if (pushStatus !== 'granted') {
+       alert("Please enable push notifications in settings to use this feature.");
+       setIsSettingsModalOpen(true);
        return;
     }
-    setSubscriptions(prev => {
-       const newSubs = new Set(prev);
-       if (newSubs.has(type)) {
-         newSubs.delete(type);
-       } else {
-         newSubs.add(type);
-       }
-       return newSubs;
-    });
+    const isSubscribed = roomData?.members?.[user.username]?.subscriptions?.[type] ?? false;
+    await roomService.updateSubscription(user.username, type, !isSubscribed);
   };
 
   const handleStartMachineWithDuration = async (machine: Machine, totalMinutes: number) => {
       if (totalMinutes <= 0) return;
 
-      const permission = await handleRequestLocalNotificationPermission();
-      if (permission === 'denied') {
-          alert("You've blocked local notifications. To get cycle alerts, please enable them in your browser settings.");
+      if (Notification.permission === 'denied') {
+          alert("You've blocked notifications. To get cycle alerts, please enable them in your browser settings.");
       }
 
       updateMachineStatus(machine.id, MachineStatus.InUse, {
@@ -312,27 +236,25 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     }
   };
   
-  const { roomMembers, allWashersBusy, allDryersBusy } = useMemo(() => {
-      if (!roomData) return { roomMembers: [], allWashersBusy: false, allDryersBusy: false };
+  const { roomMembers, allWashersBusy, allDryersBusy, subscriptions } = useMemo(() => {
+      if (!roomData) return { roomMembers: [], allWashersBusy: false, allDryersBusy: false, subscriptions: { washer: false, dryer: false } };
       const users = [...new Set(roomData.machines.map(m => m.lastUsedBy).filter((name): name is string => !!name))];
       const washers = roomData.machines.filter(m => m.type === 'washer');
       const dryers = roomData.machines.filter(m => m.type === 'dryer');
       const allWashersBusy = washers.length > 0 && washers.every(m => m.status === MachineStatus.InUse);
       const allDryersBusy = dryers.length > 0 && dryers.every(m => m.status === 'In Use');
-      return { roomMembers: users, allWashersBusy, allDryersBusy };
-  }, [roomData]);
+      const userSubscriptions = roomData.members?.[user.username]?.subscriptions || { washer: false, dryer: false };
+      return { roomMembers: users, allWashersBusy, allDryersBusy, subscriptions: userSubscriptions };
+  }, [roomData, user.username]);
   
   // PWA Install Handler
   const handleInstallClick = async () => {
     if (!installPrompt) {
       return;
     }
-    // Show the browser's installation prompt
     installPrompt.prompt();
-    // Wait for the user to respond
     const { outcome } = await installPrompt.userChoice;
     console.log(`User response to the install prompt: ${outcome}`);
-    // We've used the prompt, and can't use it again, so clear it
     setInstallPrompt(null);
   };
 
@@ -352,7 +274,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
             }
             const currentToken = await getToken(messaging, { vapidKey: vapidKey });
             if (currentToken) {
-                await roomService.addFCMToken(currentToken);
+                await roomService.addFCMToken(user.username, currentToken);
                 setPushStatus('granted');
                 alert("Push notifications have been enabled for this device!");
             } else {
@@ -376,7 +298,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
         const vapidKey = (import.meta as any).env.VITE_FIREBASE_VAPID_KEY;
         const currentToken = await getToken(messaging, { vapidKey });
         if (currentToken) {
-            await roomService.removeFCMToken(currentToken);
+            await roomService.removeFCMToken(user.username, currentToken);
         }
         setPushStatus('default'); 
         alert("Push notifications have been disabled for this device.");
@@ -419,19 +341,19 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                 {allWashersBusy && (
                     <button 
                         onClick={() => handleSubscribe('washer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('washer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.washer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.has('washer') ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
+                        <span>{subscriptions.washer ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
                     </button>
                 )}
                 {allDryersBusy && (
                      <button 
                         onClick={() => handleSubscribe('dryer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.has('dryer') ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.dryer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.has('dryer') ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
+                        <span>{subscriptions.dryer ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
                     </button>
                 )}
             </div>

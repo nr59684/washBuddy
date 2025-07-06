@@ -10,8 +10,9 @@ if (!rootElement) {
 
 // Register the service worker for Firebase Cloud Messaging
 if ('serviceWorker' in navigator) {
-  const swUrl = `${(import.meta as any).env.BASE_URL}firebase-messaging-sw.js`;
-  navigator.serviceWorker.register(swUrl, { scope: (import.meta as any).env.BASE_URL })
+  // The service worker is placed at the root by the build process
+  const swUrl = `/firebase-messaging-sw.js`;
+  navigator.serviceWorker.register(swUrl, { scope: '/' })
     .then(registration => {
       console.log('Service Worker registered with scope:', registration.scope);
     })
