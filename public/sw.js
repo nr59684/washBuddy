@@ -105,7 +105,11 @@ self.addEventListener('push', (event) => {
   const options = {
     body: body || 'You have a new message from Wash Buddy.',
     icon: icon || 'https://i.imgur.com/O9N4p5p.png',
+    // Use the 192x192 icon from the public/icons folder as the notification icon
+    icon: '/icons/icon-192.png',
     badge: badge || 'https://i.imgur.com/O9N4p5p.png',
+    // Use the 192x192 icon from the public/icons folder as the notification badge
+    badge: '/icons/icon-192.png',
   };
 
   event.waitUntil(self.registration.showNotification(title || 'Wash Buddy', options));
