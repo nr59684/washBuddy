@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
@@ -142,18 +143,29 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
   const updateMachineStatus = useCallback((id: number, status: MachineStatus, options?: { durationMinutes?: number; username?: string; }) => {
     if (!roomData) return;
-    
+
     const newMachines = roomData.machines.map(machine => {
-      if (machine.id === id) {
-        const finishTime = status === MachineStatus.InUse && options?.durationMinutes
-          ? Date.now() + options.durationMinutes * 60 * 1000
-          : null;
-        
-        const lastUsedBy = status === MachineStatus.InUse ? options?.username || machine.lastUsedBy : machine.lastUsedBy;
-        
-        return { ...machine, status, finishTime, lastUsedBy };
-      }
-      return machine;
+        if (machine.id === id) {
+            const updatedMachine = { ...machine, status };
+
+            // Handle state-specific property changes
+            if (status === MachineStatus.InUse) {
+                if (options?.durationMinutes) {
+                    updatedMachine.finishTime = Date.now() + options.durationMinutes * 60 * 1000;
+                }
+                if (options?.username) {
+                    updatedMachine.lastUsedBy = options.username;
+                }
+            } else if (status === MachineStatus.Available || status === MachineStatus.OutOfService) {
+                // When a machine is cleared or taken out of service, its timer should be reset.
+                updatedMachine.finishTime = null;
+            }
+            // Note: When status changes to 'Finished', we intentionally do not modify 
+            // finishTime, preserving the original end time for display or history.
+
+            return updatedMachine;
+        }
+        return machine;
     });
 
     const newRoomData = { ...roomData, machines: newMachines };
