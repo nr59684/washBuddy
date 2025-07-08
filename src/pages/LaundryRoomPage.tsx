@@ -336,21 +336,21 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       <Header user={displayUser} onLogout={onLogout} />
       <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8">
         <div>
-            <div className="flex justify-between items-center mb-4 gap-2">
-              <h2 className="text-2xl font-bold text-slate-800 flex items-center truncate">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-4">
+              <h2 className="text-2xl font-bold text-slate-800 flex items-center min-w-0">
                 <WasherIcon className="w-8 h-8 mr-3 text-sky-600 flex-shrink-0" />
                 <span className="truncate" title={roomData?.name}>{isLoading ? "Loading..." : roomData?.name}</span>
               </h2>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={() => setIsSettingsModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition-colors" title="Room Settings">
+              <div className="w-full sm:w-auto grid grid-cols-3 sm:flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => setIsSettingsModalOpen(true)} className="flex items-center justify-center sm:justify-start gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-3 py-2 sm:px-4 rounded-lg transition-colors" title="Room Settings">
                   <SettingsIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Settings</span>
                 </button>
-                <button onClick={() => setIsMembersModalOpen(true)} className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition-colors" title="View room members">
+                <button onClick={() => setIsMembersModalOpen(true)} className="flex items-center justify-center sm:justify-start gap-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold px-3 py-2 sm:px-4 rounded-lg transition-colors" title="View room members">
                   <UsersIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Members</span>
                 </button>
-                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors" title="Add a new machine">
+                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center justify-center sm:justify-start gap-2 bg-sky-500 hover:bg-sky-600 text-white font-semibold px-3 py-2 sm:px-4 rounded-lg transition-colors" title="Add a new machine">
                   <PlusCircleIcon className="w-5 h-5"/>
                   <span className="hidden sm:inline">Add Machine</span>
                 </button>
