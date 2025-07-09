@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const webpush = require("web-push");
@@ -7,16 +8,12 @@ admin.initializeApp();
 // Initialize web-push with VAPID details once.
 // It's crucial to set these in your Firebase Functions config.
 // See README.md for instructions.
-const vapidConfig = functions.config().webpush;
-if (vapidConfig && vapidConfig.private_key && vapidConfig.mail_to && process.env.VITE_VAPID_PUBLIC_KEY) {
-  webpush.setVapidDetails(
-    vapidConfig.mail_to,
-    process.env.VITE_VAPID_PUBLIC_KEY,
-    vapidConfig.private_key,
-  );
-} else {
-  console.warn("VAPID details not fully configured. Push notifications will not work.");
-}
+
+webpush.setVapidDetails(
+    "mailto:rijhwaninilesh@gmail.com",
+    "BAWfcaGBdI67mL1vObCUQZi_5LOBNloy0Vm7zmVvU7Txpwyu0lTI-6XD8NWpOo6hULnlzeFfobc6FJ35YlV7iX8",
+    "h84-IdV9-eQkphOUU9t8m0fdev6F0-kgmjvt_F-fIMY",
+);
 
 
 // A helper function to send notifications and handle cleanup of stale subscriptions.
@@ -26,16 +23,18 @@ const sendNotifications = async (subscriptions, payload) => {
 
   Object.entries(subscriptions).forEach(([endpoint, sub]) => {
     deliveryPromises.push(
-      webpush.sendNotification(sub, payload)
-        .catch((err) => {
-          // A 410 'Gone' status code indicates the subscription is no longer valid.
-          if (err.statusCode === 410) {
-            console.log(`Subscription for ${endpoint} is stale, marking for removal.`);
-            staleSubscriptions.push(endpoint);
-          } else {
-            console.error(`Failed to send notification to ${endpoint}:`, err);
-          }
-        }),
+        webpush.sendNotification(sub, payload)
+            .catch((err) => {
+              // A 410 'Gone' status code indicates the subscription is no longer valid.
+              if (err.statusCode === 410) {
+                console.log(`Subscription for ${endpoint} is stale, marking for removal.`);
+                staleSubscriptions.push(endpoint);
+              } else {
+                // Log other errors for debugging
+
+                console.error(`Failed to send notification to ${endpoint}:`, err);
+              }
+            }),
     );
   });
 
@@ -43,96 +42,156 @@ const sendNotifications = async (subscriptions, payload) => {
   return staleSubscriptions;
 };
 
+// HTTP function to receive push subscriptions from your client
+exports.addSubscription = functions.https.onCall(async (data, context) => {
+  // Ensure the user is authenticated
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+        "unauthenticated",
+        "The function must be called while authenticated.",
+    );
+  }
+
+  const {roomId, username, subscription} = data;
+
+  // Basic validation of the subscription object
+  if (!roomId || !username || !subscription || !subscription.endpoint) {
+    throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Missing required parameters: roomId, username, or subscription.",
+    );
+  }
+
+  // You might want to add more validation for the subscription object keys (keys.p256dh, keys.auth)
+
+
+  // Sanitize the endpoint to use as a key (Realtime Database keys cannot contain ., #, $, [, ], or /)
+  const sanitizedEndpoint = subscription.endpoint.replace(/[.$#[\]/]/g, "_");
+  // Use a portion of the endpoint as the key to avoid excessively long keys
+  const subscriptionKey = sanitizedEndpoint.substring(0, 100);
+
+  const dbPath = `/rooms/${roomId}/members/${username}/pushSubscriptions/${subscriptionKey}`;
+
+  try {
+    await admin.database().ref(dbPath).set(subscription);
+    console.log(`Subscription added for user ${username} in room ${roomId}`);
+    return {success: true, message: "Subscription added successfully."};
+  } catch (error) {
+    console.error("Error adding subscription:", error);
+    throw new functions.https.HttpsError(
+        "internal",
+        "Unable to add subscription.",
+        error,
+    );
+  }
+});
+
 
 exports.handleMachineUpdates = functions.region("us-central1").database.ref("/rooms/{roomId}")
-  .onWrite(async (change, context) => {
-    const beforeData = change.before.exists() ? change.before.val() : null;
-    const afterData = change.after.exists() ? change.after.val() : null;
+    .onWrite(async (change, context) => {
+      const beforeData = change.before.exists() ? change.before.val() : null;
+      const afterData = change.after.exists() ? change.after.val() : null;
 
-    if (!afterData) {
-      console.log(`Room ${context.params.roomId} deleted, no action.`);
-      return null;
-    }
-
-    if (!beforeData || !beforeData.machines || !beforeData.members) {
-      console.log("Room created or incomplete, skipping notification logic.");
-      return null;
-    }
-    if (!vapidConfig) {
-      console.error("Web Push is not configured. Skipping notifications.");
-      return null;
-    }
-
-    const { roomId } = context.params;
-    const { members, machines: afterMachines } = afterData;
-    const { machines: beforeMachines } = beforeData;
-    
-    let staleSubscriptions = [];
-
-    // 1. Check for machines that finished
-    for (const afterMachine of afterMachines) {
-      const beforeMachine = beforeMachines.find((m) => m.id === afterMachine.id);
-      if (!beforeMachine) continue;
-
-      if (
-        beforeMachine.status === "In Use" &&
-        afterMachine.status === "Finished"
-      ) {
-        const username = afterMachine.lastUsedBy;
-        const member = members?.[username];
-        if (member?.pushSubscriptions) {
-          const payload = JSON.stringify({
-            title: `✅ ${afterMachine.name} Finished!`,
-            body: "Your laundry is ready for pickup.",
-            icon: "https://i.imgur.com/O9N4p5p.png",
-          });
-          const stale = await sendNotifications(member.pushSubscriptions, payload);
-          staleSubscriptions.push(...stale.map(s => ({username, endpoint: s})));
-        }
+      if (!afterData) {
+        console.log(`Room ${context.params.roomId} deleted, no action.`);
+        return null;
       }
-    }
 
-    // 2. Check for newly available machines for subscribers
-    const checkAvailability = async (type) => {
-      const beforeFiltered = beforeMachines.filter((m) => m.type === type);
-      const afterFiltered = afterMachines.filter((m) => m.type === type);
+      if (!beforeData || !beforeData.machines || !beforeData.members) {
+        console.log("Room created or incomplete, skipping notification logic.");
+        return null;
+      }
 
-      if (beforeFiltered.length === 0 || afterFiltered.length === 0) return;
+      const {roomId} = context.params;
+      const {members, machines: afterMachines} = afterData;
+      const {machines: beforeMachines} = beforeData; // Destructure beforeMachines here
 
-      const wasBusy = beforeFiltered.every((m) => m.status === "In Use" || m.status === "OutOfService");
-      const isAvailable = afterFiltered.some((m) => m.status === "Available");
+      const staleSubscriptions = [];
 
-      if (wasBusy && isAvailable) {
-         const payload = JSON.stringify({
-            title: `🔔 ${type.charAt(0).toUpperCase() + type.slice(1)} Available!`,
-            body: `A ${type} is now free in your laundry room.`,
-            icon: "https://i.imgur.com/O9N4p5p.png",
-          });
+      // 1. Check for machines that finished
+      for (const afterMachine of afterMachines) {
+        const beforeMachine = beforeMachines.find((m) => m.id === afterMachine.id);
+        if (!beforeMachine) continue;
 
-        for (const [username, memberData] of Object.entries(members || {})) {
-          if (memberData?.subscriptions?.[type] && memberData.pushSubscriptions) {
-              const stale = await sendNotifications(memberData.pushSubscriptions, payload);
-              staleSubscriptions.push(...stale.map(s => ({username, endpoint: s})));
-              // Unsubscribe user after notification
-              await admin.database().ref(`/rooms/${roomId}/members/${username}/subscriptions/${type}`).set(false);
+        if (
+          beforeMachine.status === "In Use" &&
+        afterMachine.status === "Finished"
+
+        ) {
+          const username = afterMachine.lastUsedBy;
+          // Check if member and their pushSubscriptions exist without optional chaining
+          const member = members && members[username];
+          // Check if pushSubscriptions exist
+
+
+          if (member && member.pushSubscriptions) {
+            const payload = JSON.stringify({
+              title: `✅ ${afterMachine.name} Finished!`,
+              body: "Your laundry is ready for pickup.",
+              icon: "/icons/icon-192.png", // Use relative path
+            });
+            const stale = await sendNotifications(member.pushSubscriptions, payload);
+
+
+            staleSubscriptions.push(...stale.map((s) => ({username, endpoint: s})));
           }
         }
       }
-    };
-    
-    await checkAvailability("washer");
-    await checkAvailability("dryer");
-    
-    // 3. Clean up any stale subscriptions
-    if (staleSubscriptions.length > 0) {
+
+      // 2. Check for newly available machines for subscribers
+      const checkAvailability = async (type) => {
+        const beforeFiltered = beforeMachines.filter((m) => m.type === type);
+        const afterFiltered = afterMachines.filter((m) => m.type === type);
+
+        if (beforeFiltered.length === 0 || afterFiltered.length === 0) return;
+
+        const wasBusy = beforeFiltered.every((m) =>
+          m.status === "In Use" || m.status === "OutOfService",
+        );
+        const isAvailable = afterFiltered.some((m) => m.status === "Available");
+
+        if (wasBusy && isAvailable) {
+          const payload = JSON.stringify({
+            title: `🔔 ${type.charAt(0).toUpperCase() + type.slice(1)} Available!`,
+            body: `A ${type} is now free in your laundry room.`,
+            icon: "/icons/icon-192.png", // Use relative path
+          });
+
+
+          for (const [username, memberData] of Object.entries(members || {})) {
+          // Check if memberData, subscriptions, and the specific subscription type exist
+            const hasSubscriptionType = memberData && memberData.subscriptions && memberData.subscriptions[type];
+            // Check if memberData and their pushSubscriptions exist
+            const hasPushSubscriptions = memberData && memberData.pushSubscriptions;
+            if (hasSubscriptionType && hasPushSubscriptions) {
+              const stale = await sendNotifications(memberData.pushSubscriptions, payload);
+              staleSubscriptions.push(...stale.map((s) => ({username, endpoint: s})));
+
+
+              // Unsubscribe user after notification
+              await admin.database().ref(`/rooms/${roomId}/members/${username}/subscriptions/${type}`).set(false);
+            }
+          }
+        }
+      };
+
+      await checkAvailability("washer");
+      await checkAvailability("dryer");
+
+      // 3. Clean up any stale subscriptions
+      if (staleSubscriptions.length > 0) {
         const updates = {};
+
         staleSubscriptions.forEach(({username, endpoint}) => {
-            const path = `/rooms/${roomId}/members/${username}/pushSubscriptions/${endpoint.substring(0, 100).replace(/[.$#\[\]\/]/g, '_')}`; // Sanitize and use part of the endpoint as key
-            updates[path] = null;
+          // Sanitize and use part of the endpoint as key
+
+          const sanitizedEndpoint = endpoint.substring(0, 100).replace(/[.$#[\]/]/g, "_");
+          const path = `/rooms/${roomId}/members/${username}/pushSubscriptions/${sanitizedEndpoint}`;
+          updates[path] = null;
         });
         await admin.database().ref().update(updates);
         console.log(`Cleaned up ${staleSubscriptions.length} stale subscription(s).`);
-    }
+      }
 
-    return null;
-  });
+      return null;
+    });

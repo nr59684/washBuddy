@@ -1,4 +1,7 @@
 
+// Import the base URL of your deployed Firebase Cloud Functions (usually from environment variables)
+const FUNCTIONS_BASE_URL = "https://us-central1-washbuddy-7f682.cloudfunctions.net/addSubscription"; // Example, adjust based on your setup
+
 // Import the VAPID public key from environment variables
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_APP_VAPID_PUBLIC_KEY;
 
@@ -71,12 +74,43 @@ const subscribeUser = async (): Promise<PushSubscription | null> => {
 
         console.log('User subscribed:', subscription);
         // Here you would typically send this subscription object to your backend
-        // sendSubscriptionToBackend(subscription); // Implement this function
+        // Send the subscription to your deployed Firebase Cloud Function
+        await sendSubscriptionToBackend(subscription); 
 
         return subscription;
     } catch (error) {
         console.error('Failed to subscribe the user: ', error);
         return null;
+    }
+};
+
+// Function to send the PushSubscription object to your backend Cloud Function
+const sendSubscriptionToBackend = async (subscription: PushSubscription) => {
+    if (!FUNCTIONS_BASE_URL) {
+        console.error("Firebase Functions base URL is not configured.");
+        return;
+    }
+
+    // Construct the URL for your addSubscription Cloud Function
+    // The exact path depends on how you defined your function's endpoint.
+    // Assuming it's an HTTP function named 'addSubscription'.
+    const addSubscriptionUrl = `${FUNCTIONS_BASE_URL}/addSubscription`; 
+
+    try {
+        const response = await fetch(addSubscriptionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(subscription)
+        });
+        if (!response.ok) {
+            console.error('Failed to send subscription to backend:', response.statusText);
+        } else {
+            console.log('Subscription successfully sent to backend.');
+        }
+    } catch (error) {
+        console.error('Error sending subscription to backend:', error);
     }
 };
 
@@ -94,7 +128,8 @@ const unsubscribeUser = async (): Promise<boolean> => {
         if (subscription) {
             await subscription.unsubscribe();
             console.log('User unsubscribed.');
-            // Here you would typically inform your backend to remove this subscription
+            // Here you would typically inform your backend (another Cloud Function) 
+            // to remove this subscription from the database.
             // removeSubscriptionFromBackend(subscription); // Implement this function
             return true;
         }
