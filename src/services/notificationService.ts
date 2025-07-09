@@ -3,7 +3,7 @@
 const FUNCTIONS_BASE_URL = "https://us-central1-washbuddy-7f682.cloudfunctions.net"; // Example, adjust based on your setup
 
 // Import the VAPID public key from environment variables
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_APP_VAPID_PUBLIC_KEY;
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
 const isIOS = () => {
     // Standard check for iOS devices
