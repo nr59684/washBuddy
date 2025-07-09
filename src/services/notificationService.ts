@@ -1,6 +1,6 @@
 
 // Import the base URL of your deployed Firebase Cloud Functions (usually from environment variables)
-const FUNCTIONS_BASE_URL = "https://us-central1-washbuddy-7f682.cloudfunctions.net/addSubscription"; // Example, adjust based on your setup
+const FUNCTIONS_BASE_URL = "https://us-central1-washbuddy-7f682.cloudfunctions.net"; // Example, adjust based on your setup
 
 // Import the VAPID public key from environment variables
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_APP_VAPID_PUBLIC_KEY;
@@ -75,7 +75,15 @@ const subscribeUser = async (): Promise<PushSubscription | null> => {
         console.log('User subscribed:', subscription);
         // Here you would typically send this subscription object to your backend
         // Send the subscription to your deployed Firebase Cloud Function
-        await sendSubscriptionToBackend(subscription); 
+        
+        // Retrieve user information (assuming you have it available in the service)
+        // You'll need to pass this from where subscribeUser is called (e.g., LaundryRoomPage)
+        // For now, using placeholder variables.
+        // TODO: Pass actual roomId and username to subscribeUser and then to sendSubscriptionToBackend
+        const dummyRoomId = "YOUR_ROOM_ID"; // Replace with actual logic
+        const dummyUsername = "YOUR_USERNAME"; // Replace with actual logic
+
+        await sendSubscriptionToBackend(subscription, dummyRoomId, dummyUsername);
 
         return subscription;
     } catch (error) {
@@ -84,8 +92,13 @@ const subscribeUser = async (): Promise<PushSubscription | null> => {
     }
 };
 
-// Function to send the PushSubscription object to your backend Cloud Function
-const sendSubscriptionToBackend = async (subscription: PushSubscription) => {
+// Function to send the PushSubscription object along with room and user info
+// to your backend Cloud Function
+const sendSubscriptionToBackend = async (
+    subscription: PushSubscription,
+    roomId: string,
+    username: string
+) => {
     if (!FUNCTIONS_BASE_URL) {
         console.error("Firebase Functions base URL is not configured.");
         return;
@@ -102,7 +115,12 @@ const sendSubscriptionToBackend = async (subscription: PushSubscription) => {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(subscription)
+            // Include the room ID and username in the request body
+            body: JSON.stringify({
+                subscription: subscription,
+                roomId: roomId,
+                username: username
+            })
         });
         if (!response.ok) {
             console.error('Failed to send subscription to backend:', response.statusText);
@@ -185,4 +203,8 @@ export const notificationService = {
     isPushSupported,
     isBadgingSupported,
     updateAppBadge,
-    sendWebNotification, requestNotificationPermission, subscribeUser, unsubscribeUser,};
+    sendWebNotification,
+    requestNotificationPermission,
+    subscribeUser,
+    unsubscribeUser,
+};
