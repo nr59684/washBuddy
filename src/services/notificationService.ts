@@ -43,7 +43,7 @@ const requestNotificationPermission = async (): Promise<NotificationPermission> 
 };
 
 // Function to subscribe the user to push notifications
-const subscribeUser = async (): Promise<PushSubscription | null> => {
+const subscribeUser = async (roomId: string, username: string): Promise<PushSubscription | null> => {
     if (!isPushSupported()) {
         console.warn("Push notifications not supported in this browser.");
         return null;
@@ -73,17 +73,12 @@ const subscribeUser = async (): Promise<PushSubscription | null> => {
         });
 
         console.log('User subscribed:', subscription);
-        // Here you would typically send this subscription object to your backend
-        // Send the subscription to your deployed Firebase Cloud Function
         
-        // Retrieve user information (assuming you have it available in the service)
-        // You'll need to pass this from where subscribeUser is called (e.g., LaundryRoomPage)
-        // For now, using placeholder variables.
-        // TODO: Pass actual roomId and username to subscribeUser and then to sendSubscriptionToBackend
-        const dummyRoomId = "YOUR_ROOM_ID"; // Replace with actual logic
-        const dummyUsername = "YOUR_USERNAME"; // Replace with actual logic
+        // Send the subscription along with room and user information to the backend Cloud Function
+        // Pass the actual roomId and username received as arguments
 
-        await sendSubscriptionToBackend(subscription, dummyRoomId, dummyUsername);
+
+        await sendSubscriptionToBackend(subscription, roomId, username);
 
         return subscription;
     } catch (error) {

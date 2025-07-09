@@ -16,23 +16,6 @@ interface LaundryRoomPageProps {
 
 type PushStatus = 'unsupported' | 'denied' | 'granted' | 'default' | 'loading';
 
-// Helper to convert VAPID key
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
-
 const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -285,28 +268,17 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   // Push Notification Handlers
   const handleEnablePush = async () => {
     setPushStatus('loading');
-    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-    if (!vapidKey) {
-      console.error("VAPID public key not found. Push notifications cannot be enabled.");
-      alert("Push notifications are not configured correctly. Please contact the administrator.");
-      setPushStatus('default');
-      return;
-    }
 
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
-      });
+    // Call the subscribeUser function from the notificationService, passing user and room info
+    const subscription = await notificationService.subscribeUser(user.roomId, user.username);
 
-      await roomService.addPushSubscription(user.username, subscription);
+    // Check if the subscription was successful (returns a PushSubscription object)
+    if (subscription) {
       setPushStatus('granted');
       alert("Push notifications enabled!");
-    } catch (error) {
-      console.error('Error subscribing to push notifications:', error);
-      const permission = await navigator.permissions.query({ name: 'push' });
-      setPushStatus(permission.state as PushStatus);
+    } else {
+      console.error('Subscription failed or was not granted.');
+      setPushStatus(Notification.permission as PushStatus); // Update status based on browser permission
       alert('Failed to enable push notifications. Please check your browser settings.');
     }
   };
