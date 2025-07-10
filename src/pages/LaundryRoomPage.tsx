@@ -216,6 +216,24 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     setInstallPrompt(null);
   };
 
+  const handleRequestNotificationPermission = async () => {
+    if ('Notification' in window && 'serviceWorker' in navigator) {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        console.log('Notification permission granted.');
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          console.log('Push Subscription:', subscription);
+        } else {
+          console.log('No push subscription found.');
+        }
+      } else {
+        console.log('Notification permission denied.');
+      }
+    }
+  };
+
   const machines = roomData?.machines ?? [];
   const washModes = roomData?.modes ?? [];
 
@@ -330,6 +348,12 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                 ) : (
                   <p className="text-sm text-slate-500 text-center px-4">This app has been installed or your browser doesn't support direct installation. You can add it to your home screen via the browser menu.</p>
                 )}
+            </div>
+            <div className="pt-6">
+              <h3 className="text-lg font-semibold text-slate-800 pb-2 mb-3 flex items-center gap-2"><BellIcon className="w-5 h-5"/> Notifications</h3>
+              <button onClick={handleRequestNotificationPermission} className="w-full px-4 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 transition-colors">
+                Enable Notifications
+              </button>
             </div>
 
             {[ 'washer', 'dryer' ].map(type => (
