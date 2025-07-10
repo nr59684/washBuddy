@@ -258,7 +258,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const title = "Test Notification";
     const options = {
         body: "This is a test notification from Wash Buddy!",
-        icon: '/icons/android-chrome-192x192.png', // Use an existing icon from your public assets
+        icon: '/icons/icon-192.png', // Use an existing icon from your public assets
         // image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Orange_tabby_cat_sitting_on_fallen_leaves-Hisashi-01A.jpg/1920px-Orange_tabby_cat_sitting_on_fallen_leaves-Hisashi-01A.jpg', // Optional image
         data: {
             url: window.location.origin, // Link back to the app
