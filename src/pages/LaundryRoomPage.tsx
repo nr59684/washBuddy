@@ -33,6 +33,9 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeDuration, setNewModeDuration] = useState('');
 
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+
+  const [pushStatus, setPushStatus] = useState<NotificationPermission | 'loading'>('loading');
+  const [platformInfo, setPlatformInfo] = useState({ isIOS: false, isPushSupported: false });
   
   const roomService = useMemo(() => roomServiceFactory.getService(user.roomId, user.roomName), [user.roomId, user.roomName]);
 
@@ -75,6 +78,19 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       unsubscribe();
     };
   }, [roomService]);
+
+  useEffect(() => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const isPushSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+    
+    setPlatformInfo({ isIOS, isPushSupported });
+
+    if (isPushSupported) {
+      setPushStatus(Notification.permission);
+    } else {
+      setPushStatus('denied'); 
+    }
+  }, []);
 
 
   // Display user object that is updated with the real room name once loaded
@@ -216,22 +232,22 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     setInstallPrompt(null);
   };
 
-  const handleRequestNotificationPermission = async () => {
-    if ('Notification' in window && 'serviceWorker' in navigator) {
+  const handleEnablePush = async () => {
+    if (!platformInfo.isPushSupported) return;
+    try {
       const permission = await Notification.requestPermission();
+      setPushStatus(permission);
       if (permission === 'granted') {
         console.log('Notification permission granted.');
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-          console.log('Push Subscription:', subscription);
-        } else {
-          console.log('No push subscription found.');
-        }
-      } else {
-        console.log('Notification permission denied.');
       }
+    } catch (error) {
+      console.error('Error requesting notification permission:', error);
+      setPushStatus('denied');
     }
+  };
+
+  const handleDisablePush = () => {
+    alert("To disable notifications, please go to your browser settings for this site and block notifications.");
   };
 
   const machines = roomData?.machines ?? [];
@@ -351,9 +367,35 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
             </div>
             <div className="pt-6">
               <h3 className="text-lg font-semibold text-slate-800 pb-2 mb-3 flex items-center gap-2"><BellIcon className="w-5 h-5"/> Notifications</h3>
-              <button onClick={handleRequestNotificationPermission} className="w-full px-4 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 transition-colors">
-                Enable Notifications
-              </button>
+              {platformInfo.isIOS && (
+                <div className="bg-sky-50 p-4 rounded-lg text-center mb-4">
+                  <p className="font-medium text-sky-800">On iOS, add this app to your Home Screen to get badge & push notifications when your laundry is done.</p>
+                </div>
+              )}
+              { platformInfo.isPushSupported ? (
+                  <div className="bg-slate-100 p-4 rounded-lg">
+                      {pushStatus === 'granted' && (
+                          <div className="text-center">
+                              <p className="font-medium text-green-700 mb-3">Push notifications are enabled for this device.</p>
+                              <button onClick={handleDisablePush} className="w-full px-4 py-2 bg-red-500 text-white font-semibold rounded-md hover:bg-red-600 transition-colors">Disable Notifications</button>
+                          </div>
+                      )}
+                      {pushStatus === 'default' && (
+                          <div className="text-center">
+                              <p className="font-medium text-slate-700 mb-3">Get notified even when the app is closed.</p>
+                              <button onClick={handleEnablePush} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors">Enable Push Notifications</button>
+                          </div>
+                      )}
+                      {pushStatus === 'denied' && (
+                           <p className="font-medium text-red-700 text-center">You have blocked notifications. Please enable them in your browser settings to use this feature.</p>
+                      )}
+                      {pushStatus === 'loading' && (
+                          <p className="font-medium text-slate-500 text-center animate-pulse">Loading...</p>
+                      )}
+                  </div>
+                ) : (
+                    !platformInfo.isIOS && <p className="font-medium text-slate-500 text-center">Push notifications are not supported on this browser.</p>
+                )}
             </div>
 
             {[ 'washer', 'dryer' ].map(type => (
