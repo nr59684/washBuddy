@@ -249,6 +249,23 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const handleDisablePush = () => {
     alert("To disable notifications, please go to your browser settings for this site and block notifications.");
   };
+  
+  const testSendNotification = async () => {
+    if (pushStatus !== 'granted' || !('serviceWorker' in navigator) || !navigator.serviceWorker.ready) {
+        console.warn('Notifications not supported or permission not granted.');
+        return;
+    }
+    const title = "Test Notification";
+    const options = {
+        body: "This is a test notification from Wash Buddy!",
+        icon: '/icons/android-chrome-192x192.png', // Use an existing icon from your public assets
+        // image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Orange_tabby_cat_sitting_on_fallen_leaves-Hisashi-01A.jpg/1920px-Orange_tabby_cat_sitting_on_fallen_leaves-Hisashi-01A.jpg', // Optional image
+        data: {
+            url: window.location.origin, // Link back to the app
+        },
+    };
+    navigator.serviceWorker.ready.then(async function (serviceWorker) { await serviceWorker.showNotification(title, options); });
+  };
 
   const machines = roomData?.machines ?? [];
   const washModes = roomData?.modes ?? [];
@@ -391,6 +408,11 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                       )}
                       {pushStatus === 'loading' && (
                           <p className="font-medium text-slate-500 text-center animate-pulse">Loading...</p>
+                      )}
+                      {pushStatus === 'granted' && (
+                        <div className="mt-4 text-center">
+                           <button onClick={testSendNotification} className="w-full px-4 py-2 bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-600 transition-colors disabled:bg-slate-400" disabled={pushStatus !== 'granted'}>Send Test Notification</button>
+                        </div>
                       )}
                   </div>
                 ) : (
