@@ -12,8 +12,6 @@ interface LaundryRoomPageProps {
   onLogout: () => void;
 }
 
-type PushStatus = 'unsupported' | 'denied' | 'granted' | 'default' | 'loading';
-
 const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
