@@ -5,6 +5,7 @@ import { resolve } from 'path';
 import { readFileSync, writeFileSync } from 'fs';
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from "vite-plugin-pwa";
+import path from 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -18,6 +19,10 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
       registerType: 'autoUpdate',
+      injectManifest: {
+        swSrc: path.resolve(__dirname, 'src/firebase-messaging-sw.js'),
+        swDest: 'firebase-messaging-sw.js'
+      },
       manifest: {
         name: 'Wash Buddy - Dorm Laundry Tracker',
         short_name: 'Wash Buddy',
