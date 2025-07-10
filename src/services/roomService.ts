@@ -7,9 +7,6 @@ interface RoomService {
     getRoomData(): Promise<RoomData>;
     updateRoomData(data: RoomData): Promise<void>;
     onDataChange(callback: (data: RoomData) => void): () => void; // Returns an unsubscribe function
-    addPushSubscription(username: string, subscription: PushSubscription): Promise<void>;
-    removePushSubscription(username: string, subscription: PushSubscription): Promise<void>;
-    updateSubscription(username: string, type: 'washer' | 'dryer', isSubscribed: boolean): Promise<void>;
 }
 
 // --- FIREBASE REAL-TIME SERVICE ---
@@ -93,44 +90,6 @@ class FirebaseRoomService implements RoomService {
                  this.isListenerAttached = false;
             }
         };
-    }
-
-    async addPushSubscription(username: string, subscription: PushSubscription): Promise<void> {
-        if (!username || !subscription.endpoint) return;
-        const subAsJson = subscription.toJSON();
-        // Sanitize the endpoint URL to use as a Firebase key
-        if (!subAsJson.endpoint) {
-            console.error("Push subscription endpoint is undefined.");
-            return;
-        }
-        const key = subAsJson.endpoint.substring(0, 100).replace(/[.$#\[\]\/]/g, '_');
-        const subscriptionRef = ref(db, `rooms/${this.roomId}/members/${username}/pushSubscriptions/${key}`);
-        try {
-            await set(subscriptionRef, subAsJson);
-        } catch (error) {
-            console.error("Failed to save push subscription:", error);
-        }
-    }
-
-    async removePushSubscription(username: string, subscription: PushSubscription): Promise<void> {
-        if (!username || !subscription.endpoint) return;
-        const key = subscription.endpoint.substring(0, 100).replace(/[.$#\[\]\/]/g, '_');
-        const subscriptionRef = ref(db, `rooms/${this.roomId}/members/${username}/pushSubscriptions/${key}`);
-        try {
-            await set(subscriptionRef, null); // Set to null to delete
-        } catch (error) {
-            console.error("Failed to remove push subscription:", error);
-        }
-    }
-    
-    async updateSubscription(username: string, type: 'washer' | 'dryer', isSubscribed: boolean): Promise<void> {
-        if (!username) return;
-        try {
-            const subscriptionRef = ref(db, `rooms/${this.roomId}/members/${username}/subscriptions/${type}`);
-            await set(subscriptionRef, isSubscribed);
-        } catch (error) {
-            console.error(`Failed to update subscription for ${type}:`, error);
-        }
     }
 }
 

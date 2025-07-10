@@ -1,12 +1,10 @@
 
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
 import Modal from '../components/Modal';
 import { roomServiceFactory } from '../services/roomService';
-import { notificationService } from '../services/notificationService';
 import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon } from '../components/icons';
 
 interface LaundryRoomPageProps {
@@ -36,15 +34,9 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeName, setNewModeName] = useState('');
   const [newModeDuration, setNewModeDuration] = useState('');
 
-  const [pushStatus, setPushStatus] = useState<PushStatus>('loading');
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   
   const roomService = useMemo(() => roomServiceFactory.getService(user.roomId, user.roomName), [user.roomId, user.roomName]);
-
-  const platformInfo = useMemo(() => ({
-    isIOS: notificationService.isIOS(),
-    isPushSupported: notificationService.isPushSupported(),
-  }), []);
 
   // Effect to handle the PWA installation prompt
   useEffect(() => {
@@ -60,24 +52,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     };
   }, []);
   
-   // Effect for Push Notification status
-  useEffect(() => {
-    if (!platformInfo.isPushSupported) {
-      setPushStatus('unsupported');
-      return;
-    }
-
-    navigator.serviceWorker.ready.then(registration => {
-        registration.pushManager.getSubscription().then(subscription => {
-            if (subscription) {
-                setPushStatus('granted');
-            } else {
-                setPushStatus(Notification.permission);
-            }
-        });
-    });
-  }, [platformInfo.isPushSupported]);
-  
   // Effect to manage all data-driven notifications and badge updates
   useEffect(() => {
     let isMounted = true;
@@ -86,8 +60,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       const initialData = await roomService.getRoomData();
       if (isMounted) {
         setRoomData(initialData);
-        const finishedCount = initialData.machines.filter(m => m.status === MachineStatus.Finished).length;
-        notificationService.updateAppBadge(finishedCount);
         setIsLoading(false);
       }
     };
@@ -96,9 +68,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const unsubscribe = roomService.onDataChange((newData) => {
         if (!isMounted) return;
         
-        const finishedCount = newData.machines.filter(m => m.status === MachineStatus.Finished).length;
-        notificationService.updateAppBadge(finishedCount);
-        
         setRoomData(newData);
         if(isLoading) setIsLoading(false);
     });
@@ -106,7 +75,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     return () => {
       isMounted = false;
       unsubscribe();
-      notificationService.updateAppBadge(0); // Clear badge when the user leaves
     };
   }, [roomService]);
 
@@ -155,22 +123,8 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     updateRoomAndService(newRoomData);
   }, [roomData]);
   
-  const handleSubscribe = async (type: 'washer' | 'dryer') => {
-    if (pushStatus !== 'granted') {
-       alert("Please enable push notifications in settings to use this feature.");
-       setIsSettingsModalOpen(true);
-       return;
-    }
-    const isSubscribed = roomData?.members?.[user.username]?.subscriptions?.[type] ?? false;
-    await roomService.updateSubscription(user.username, type, !isSubscribed);
-  };
-
   const handleStartMachineWithDuration = async (machine: Machine, totalMinutes: number) => {
       if (totalMinutes <= 0) return;
-
-      if ('Notification' in window && Notification.permission === 'denied') {
-          alert("You've blocked notifications. To get cycle alerts, please enable them in your browser settings.");
-      }
 
       updateMachineStatus(machine.id, MachineStatus.InUse, {
         durationMinutes: totalMinutes,
@@ -243,15 +197,14 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     }
   };
   
-  const { roomMembers, allWashersBusy, allDryersBusy, subscriptions } = useMemo(() => {
+  const { roomMembers, allWashersBusy, allDryersBusy } = useMemo(() => {
       if (!roomData) return { roomMembers: [], allWashersBusy: false, allDryersBusy: false, subscriptions: { washer: false, dryer: false } };
       const users = [...new Set(roomData.machines.map(m => m.lastUsedBy).filter((name): name is string => !!name))];
       const washers = roomData.machines.filter(m => m.type === 'washer');
       const dryers = roomData.machines.filter(m => m.type === 'dryer');
       const allWashersBusy = washers.length > 0 && washers.every(m => m.status === MachineStatus.InUse);
       const allDryersBusy = dryers.length > 0 && dryers.every(m => m.status === 'In Use');
-      const userSubscriptions = roomData.members?.[user.username]?.subscriptions || { washer: false, dryer: false };
-      return { roomMembers: users, allWashersBusy, allDryersBusy, subscriptions: userSubscriptions };
+      return { roomMembers: users, allWashersBusy, allDryersBusy };
   }, [roomData, user.username]);
   
   // PWA Install Handler
@@ -263,41 +216,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const { outcome } = await installPrompt.userChoice;
     console.log(`User response to the install prompt: ${outcome}`);
     setInstallPrompt(null);
-  };
-
-  // Push Notification Handlers
-  const handleEnablePush = async () => {
-    setPushStatus('loading');
-
-    // Call the subscribeUser function from the notificationService, passing user and room info
-    const subscription = await notificationService.subscribeUser(user.roomId, user.username);
-
-    // Check if the subscription was successful (returns a PushSubscription object)
-    if (subscription) {
-      setPushStatus('granted');
-      alert("Push notifications enabled!");
-    } else {
-      console.error('Subscription failed or was not granted.');
-      setPushStatus(Notification.permission as PushStatus); // Update status based on browser permission
-      alert('Failed to enable push notifications. Please check your browser settings.');
-    }
-  };
-
-  const handleDisablePush = async () => {
-      setPushStatus('loading');
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-            await subscription.unsubscribe();
-            await roomService.removePushSubscription(user.username, subscription);
-        }
-        setPushStatus('default'); 
-        alert("Push notifications have been disabled for this device.");
-      } catch (err) {
-        console.error('An error occurred while disabling notifications. ', err);
-        setPushStatus('granted'); // Revert on error
-      }
   };
 
   const machines = roomData?.machines ?? [];
@@ -332,20 +250,18 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
              <div className="flex justify-center gap-4 mb-6">
                 {allWashersBusy && (
                     <button 
-                        onClick={() => handleSubscribe('washer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.washer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.washer ? 'Subscribed to Washers' : 'Notify when Washer is Free'}</span>
+                        <span>Notify when Washer is Free</span>
                     </button>
                 )}
                 {allDryersBusy && (
                      <button 
-                        onClick={() => handleSubscribe('dryer')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border ${subscriptions.dryer ? 'bg-sky-600 text-white border-sky-700' : 'bg-white hover:bg-sky-50 text-sky-800 border-sky-300'}`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm border`}
                     >
                         <BellIcon className="w-5 h-5"/>
-                        <span>{subscriptions.dryer ? 'Subscribed to Dryers' : 'Notify when Dryer is Free'}</span>
+                        <span>Notify when Dryer is Free</span>
                     </button>
                 )}
             </div>
@@ -415,43 +331,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500 text-center px-4">This app has been installed or your browser doesn't support direct installation. You can add it to your home screen via the browser menu.</p>
-                )}
-            </div>
-
-            <div className="pt-6">
-                <h3 className="text-lg font-semibold text-slate-800 pb-2 mb-3 flex items-center gap-2"><BellIcon className="w-5 h-5"/> Notifications</h3>
-                {platformInfo.isIOS ? (
-                   <div className="bg-sky-50 p-4 rounded-lg text-center">
-                     <p className="font-medium text-sky-800 mb-2">Enable Home Screen Alerts</p>
-                     <p className="text-sm text-sky-700">
-                         On iOS, add this app to your Home Screen to get badge & push notifications when your laundry is done.
-                     </p>
-                   </div>
-                ) : null}
-
-                { platformInfo.isPushSupported ? (
-                  <div className="bg-slate-100 p-4 rounded-lg">
-                      {pushStatus === 'granted' && (
-                          <div className="text-center">
-                              <p className="font-medium text-green-700 mb-3">Push notifications are enabled for this device.</p>
-                              <button onClick={handleDisablePush} className="w-full px-4 py-2 bg-red-500 text-white font-semibold rounded-md hover:bg-red-600 transition-colors">Disable Notifications</button>
-                          </div>
-                      )}
-                      {pushStatus === 'default' && (
-                          <div className="text-center">
-                              <p className="font-medium text-slate-700 mb-3">Get notified even when the app is closed.</p>
-                              <button onClick={handleEnablePush} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors">Enable Push Notifications</button>
-                          </div>
-                      )}
-                      {pushStatus === 'denied' && (
-                           <p className="font-medium text-red-700 text-center">You have blocked notifications. Please enable them in your browser settings to use this feature.</p>
-                      )}
-                      {pushStatus === 'loading' && (
-                          <p className="font-medium text-slate-500 text-center animate-pulse">Loading...</p>
-                      )}
-                  </div>
-                ) : (
-                    !platformInfo.isIOS && <p className="font-medium text-slate-500 text-center">Push notifications are not supported on this browser.</p>
                 )}
             </div>
 
