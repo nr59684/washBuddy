@@ -3,14 +3,14 @@ importScripts('https://www.gstatic.com/firebasejs/10.5.0/firebase-messaging-comp
 
 // TODO: Replace with your project's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyD_ERsCP5M9iQv8YGfzTTcmvxHQPUaQnCg",
-  authDomain: "washbuddy-7f682.firebaseapp.com",
-  databaseURL: "https://washbuddy-7f682-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "washbuddy-7f682",
-  storageBucket: "washbuddy-7f682.firebasestorage.app",
-  messagingSenderId: "1048394628363",
-  appId: "1:1048394628363:web:921118374f1d1e8b46b60e",
-  measurementId: "G-LCPZ3CHBH4"
+  apiKey:         import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:     import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL:    import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId:      import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:  import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:          import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId:  import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize the Firebase app
