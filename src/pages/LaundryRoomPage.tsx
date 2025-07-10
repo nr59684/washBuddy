@@ -5,7 +5,7 @@ import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
 import Modal from '../components/Modal';
 import { roomServiceFactory } from '../services/roomService';
-import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon } from '../components/icons';
+import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon, CopyIcon } from '../components/icons';
 
 interface LaundryRoomPageProps {
   user: User;
@@ -33,6 +33,8 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeDuration, setNewModeDuration] = useState('');
 
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+  
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   const [pushStatus, setPushStatus] = useState<NotificationPermission | 'loading'>('loading');
   const [platformInfo, setPlatformInfo] = useState({ isIOS: false, isPushSupported: false });
@@ -232,13 +234,22 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     setInstallPrompt(null);
   };
 
-  const handleEnablePush = async () => {
+  const handleRequestNotificationPermission = async () => {
     if (!platformInfo.isPushSupported) return;
     try {
+      setPushStatus('loading'); // Indicate loading state
       const permission = await Notification.requestPermission();
       setPushStatus(permission);
       if (permission === 'granted') {
         console.log('Notification permission granted.');
+        // If permission is granted, request the FCM token
+        const { requestFCMToken } = await import('../services/firebase');
+        const token = await requestFCMToken();
+        if (token) {
+          setFcmToken(token);
+          // TODO: Send this token to your backend
+          console.log('FCM Token:', token);
+        }
       }
     } catch (error) {
       console.error('Error requesting notification permission:', error);
@@ -266,7 +277,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     };
     navigator.serviceWorker.ready.then(async function (serviceWorker) { await serviceWorker.showNotification(title, options); });
   };
-
+  
   const machines = roomData?.machines ?? [];
   const washModes = roomData?.modes ?? [];
 
@@ -399,19 +410,31 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                       )}
                       {pushStatus === 'default' && (
                           <div className="text-center">
-                              <p className="font-medium text-slate-700 mb-3">Get notified even when the app is closed.</p>
-                              <button onClick={handleEnablePush} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors">Enable Push Notifications</button>
+                              <p className="font-medium text-slate-700 mb-3">Allow notifications to get alerts when your laundry is done.</p>
+                              <button onClick={handleRequestNotificationPermission} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors">Enable Notifications</button>
                           </div>
                       )}
                       {pushStatus === 'denied' && (
                            <p className="font-medium text-red-700 text-center">You have blocked notifications. Please enable them in your browser settings to use this feature.</p>
                       )}
                       {pushStatus === 'loading' && (
-                          <p className="font-medium text-slate-500 text-center animate-pulse">Loading...</p>
+                          <p className="font-medium text-slate-500 text-center animate-pulse">Checking notification status...</p>
                       )}
                       {pushStatus === 'granted' && (
                         <div className="mt-4 text-center">
-                           <button onClick={testSendNotification} className="w-full px-4 py-2 bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-600 transition-colors disabled:bg-slate-400" disabled={pushStatus !== 'granted'}>Send Test Notification</button>
+                           <button onClick={testSendNotification} className="w-full px-4 py-2 bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-600 transition-colors disabled:bg-slate-400 mb-3" disabled={pushStatus !== 'granted'}>Send Test Notification</button>
+                        </div>
+                      )}
+                      {pushStatus === 'granted' && fcmToken && (
+                        <div className="mt-4 bg-slate-50 p-3 rounded-lg text-sm text-slate-700 break-all">
+                          <p className="font-semibold mb-2">FCM Token (for debugging):</p>
+                          <div className="flex items-center">
+                             <span className="flex-grow pr-2 font-mono text-xs">{fcmToken}</span>
+                             <button 
+                                onClick={() => navigator.clipboard.writeText(fcmToken)}
+                                className="flex-shrink-0 p-1 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded"
+                                title="Copy Token"><CopyIcon className="w-4 h-4" /></button>
+                          </div>
                         </div>
                       )}
                   </div>
