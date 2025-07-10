@@ -1,20 +1,15 @@
 importScripts('https://www.gstatic.com/firebasejs/10.5.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.5.0/firebase-messaging-compat.js');
 
-// TODO: Replace with your project's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyD_ERsCP5M9iQv8YGfzTTcmvxHQPUaQnCg",
-  authDomain: "washbuddy-7f682.firebaseapp.com",
-  databaseURL: "https://washbuddy-7f682-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "washbuddy-7f682",
-  storageBucket: "washbuddy-7f682.firebasestorage.app",
-  messagingSenderId: "1048394628363",
-  appId: "1:1048394628363:web:921118374f1d1e8b46b60e",
-  measurementId: "G-LCPZ3CHBH4"
-};
+// Placeholder for injected Firebase configuration
+// This will be replaced by the build process
+const firebaseConfig = self.__FIREBASE_CONFIG__; // Use a unique global variable name
 
-// Initialize the Firebase app
-const app = firebase.initializeApp(firebaseConfig);
+// Initialize the Firebase app if the config is provided
+if (firebaseConfig) {
+  firebase.initializeApp(firebaseConfig);
+}
+
 
 // Retrieve Firebase Messaging object.
 const messaging = firebase.messaging();
