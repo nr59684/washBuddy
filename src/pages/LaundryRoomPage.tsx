@@ -114,7 +114,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newMachines = roomData.machines.map(machine => {
         if (machine.id === id) {
-            const updatedMachine = { ...machine, status, lastUsedBy: options?.username || machine.lastUsedBy };
+            const updatedMachine = { ...machine, status, lastUsedBy: options?.username ?? machine.lastUsedBy };
 
             if (status === MachineStatus.InUse && options?.durationMinutes) {
                 updatedMachine.finishTime = Date.now() + options.durationMinutes * 60 * 1000;
