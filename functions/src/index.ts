@@ -57,7 +57,6 @@ export const sendmachinefinishednotification = onValueUpdated(
         notification: {
           title: "Laundry's Done! 🫧",
           body: `Your cycle on machine '${machineName}' is finished.`,
-          icon: "/icons/icon-192.png",
         },
         token: fcmToken,
       };
