@@ -1,16 +1,15 @@
-import { ref, onValue, set, off, get } from "firebase/database";
-import { db } from './firebase'; // Import the initialized database
-import { Machine, MachineStatus, WashMode, RoomData } from '../types';
+import { ref, onValue, set, off, get, update } from "firebase/database"; // ✨ Added 'update'
+import { db } from './firebase'; 
+import { Machine, MachineStatus, WashMode, RoomData, User } from '../types'; // ✨ Added 'User'
 
 // --- SERVICE INTERFACE ---
 interface RoomService {
     getRoomData(): Promise<RoomData>;
     updateRoomData(data: RoomData): Promise<void>;
-    onDataChange(callback: (data: RoomData) => void): () => void; // Returns an unsubscribe function
+    onDataChange(callback: (data: RoomData) => void): () => void;
 }
 
 // --- FIREBASE REAL-TIME SERVICE ---
-
 class FirebaseRoomService implements RoomService {
     private roomId: string;
     private roomRef;
@@ -104,4 +103,53 @@ export const roomServiceFactory = {
         }
         return services[roomId];
     }
+};
+
+
+// ✨ --- NEW FUNCTIONALITY FOR NOTIFICATIONS --- ✨
+
+/**
+ * Updates a user's profile within a room to save their FCM token.
+ * This function is essential for sending targeted push notifications.
+ * @param roomId - The ID of the room the user is in.
+ * @param user - The user object containing their ID and username.
+ * @param token - The FCM token to save. Can be `null` to delete a token.
+ */
+export const updateUserFcmToken = async (
+  roomId: string,
+  user: User,
+  token: string | null
+) => {
+  // Ensure we have the necessary information before proceeding.
+  if (!roomId || !user || !user.username) {
+    console.error("Cannot update FCM token without roomId and user info.");
+    return;
+  }
+  
+  // Create a reference to the specific user's data inside the 'members' object of a room.
+  const memberRef = ref(db, `rooms/${roomId}/members/${user.username}`);
+
+  try {
+    // Check if the member already exists in the database.
+    const memberSnapshot = await get(memberRef);
+    
+    const memberData = {
+      fcmToken: token,
+      // You can add other user-specific info here if needed in the future
+      // For example: lastSeen: Date.now()
+    };
+    
+    if (memberSnapshot.exists()) {
+      // If the member exists, just update their data with the new token.
+      await update(memberRef, memberData);
+    } else {
+      // If the member doesn't exist, create a new entry for them.
+      await set(memberRef, memberData);
+    }
+    
+    console.log(`FCM token for user '${user.username}' has been updated.`);
+
+  } catch (error) {
+    console.error("Error saving FCM token to the database:", error);
+  }
 };

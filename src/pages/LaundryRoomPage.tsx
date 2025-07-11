@@ -1,10 +1,11 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
 import Modal from '../components/Modal';
-import { roomServiceFactory } from '../services/roomService';
+// ✨ CHANGED: Import the new service function and the token request function
+import { roomServiceFactory, updateUserFcmToken } from '../services/roomService';
+import { requestFCMToken } from '../services/firebase';
 import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon, CopyIcon } from '../components/icons';
 
 interface LaundryRoomPageProps {
@@ -113,22 +114,13 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newMachines = roomData.machines.map(machine => {
         if (machine.id === id) {
-            const updatedMachine = { ...machine, status };
+            const updatedMachine = { ...machine, status, lastUsedBy: options?.username || machine.lastUsedBy };
 
-            // Handle state-specific property changes
-            if (status === MachineStatus.InUse) {
-                if (options?.durationMinutes) {
-                    updatedMachine.finishTime = Date.now() + options.durationMinutes * 60 * 1000;
-                }
-                if (options?.username) {
-                    updatedMachine.lastUsedBy = options.username;
-                }
+            if (status === MachineStatus.InUse && options?.durationMinutes) {
+                updatedMachine.finishTime = Date.now() + options.durationMinutes * 60 * 1000;
             } else if (status === MachineStatus.Available || status === MachineStatus.OutOfService) {
-                // When a machine is cleared or taken out of service, its timer should be reset.
                 updatedMachine.finishTime = null;
             }
-            // Note: When status changes to 'Finished', we intentionally do not modify 
-            // finishTime, preserving the original end time for display or history.
 
             return updatedMachine;
         }
@@ -137,7 +129,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newRoomData = { ...roomData, machines: newMachines };
     updateRoomAndService(newRoomData);
-  }, [roomData]);
+  }, [roomData, updateRoomAndService]);
   
   const handleStartMachineWithDuration = async (machine: Machine, totalMinutes: number) => {
       if (totalMinutes <= 0) return;
@@ -214,14 +206,15 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   };
   
   const { roomMembers, allWashersBusy, allDryersBusy } = useMemo(() => {
-      if (!roomData) return { roomMembers: [], allWashersBusy: false, allDryersBusy: false, subscriptions: { washer: false, dryer: false } };
-      const users = [...new Set(roomData.machines.map(m => m.lastUsedBy).filter((name): name is string => !!name))];
-      const washers = roomData.machines.filter(m => m.type === 'washer');
-      const dryers = roomData.machines.filter(m => m.type === 'dryer');
-      const allWashersBusy = washers.length > 0 && washers.every(m => m.status === MachineStatus.InUse);
-      const allDryersBusy = dryers.length > 0 && dryers.every(m => m.status === 'In Use');
-      return { roomMembers: users, allWashersBusy, allDryersBusy };
-  }, [roomData, user.username]);
+    if (!roomData) return { roomMembers: [], allWashersBusy: false, allDryersBusy: false };
+    // ✨ CHANGED: Get members from the dedicated members object
+    const members = roomData.members ? Object.keys(roomData.members) : [];
+    const washers = roomData.machines.filter(m => m.type === 'washer');
+    const dryers = roomData.machines.filter(m => m.type === 'dryer');
+    const allWashersBusy = washers.length > 0 && washers.every(m => m.status === MachineStatus.InUse);
+    const allDryersBusy = dryers.length > 0 && dryers.every(m => m.status === 'In Use');
+    return { roomMembers: members, allWashersBusy, allDryersBusy };
+}, [roomData]);
   
   // PWA Install Handler
   const handleInstallClick = async () => {
@@ -234,31 +227,43 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     setInstallPrompt(null);
   };
 
+  // ✨ CHANGED: This is the updated core logic for getting and saving the token.
   const handleRequestNotificationPermission = async () => {
     if (!platformInfo.isPushSupported) return;
     try {
-      setPushStatus('loading'); // Indicate loading state
+      setPushStatus('loading');
       const permission = await Notification.requestPermission();
       setPushStatus(permission);
+
       if (permission === 'granted') {
-        console.log('Notification permission granted.');
-        // If permission is granted, request the FCM token
-        const { requestFCMToken } = await import('../services/firebase');
+        console.log('Notification permission granted. Requesting FCM token...');
         const token = await requestFCMToken();
         if (token) {
           setFcmToken(token);
-          // TODO: Send this token to your backend
-          console.log('FCM Token:', token);
+          console.log('FCM Token retrieved:', token);
+          // Save the token to the user's member profile in the database
+          await updateUserFcmToken(user.roomId, user, token);
+        } else {
+            console.warn('Failed to get FCM token.');
         }
+      } else {
+        console.log('Notification permission denied.');
       }
     } catch (error) {
-      console.error('Error requesting notification permission:', error);
+      console.error('Error during notification permission or token request:', error);
       setPushStatus('denied');
     }
   };
 
-  const handleDisablePush = () => {
-    alert("To disable notifications, please go to your browser settings for this site and block notifications.");
+  const handleDisablePush = async () => {
+    // ✨ CHANGED: Invalidate the token in the database by setting it to null
+    try {
+        await updateUserFcmToken(user.roomId, user, null);
+        setFcmToken(null);
+        alert("Notifications have been disabled from this app. To fully block them, please go to your browser settings.");
+    } catch (error) {
+        console.error("Failed to disable notifications:", error)
+    }
   };
   
   const testSendNotification = async () => {
@@ -269,10 +274,9 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const title = "Test Notification";
     const options = {
         body: "This is a test notification from Wash Buddy!",
-        icon: '/icons/icon-192.png', // Use an existing icon from your public assets
-        // image: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Orange_tabby_cat_sitting_on_fallen_leaves-Hisashi-01A.jpg/1920px-Orange_tabby_cat_sitting_on_fallen_leaves-Hisashi-01A.jpg', // Optional image
+        icon: '/icons/icon-192.png', 
         data: {
-            url: window.location.origin, // Link back to the app
+            url: window.location.origin,
         },
     };
     navigator.serviceWorker.ready.then(async function (serviceWorker) { await serviceWorker.showNotification(title, options); });
@@ -342,10 +346,10 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
         </div>
       </main>
 
+      {/* MODALS: The JSX for modals remains the same */}
       <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Machine"><form onSubmit={handleAddMachine}><div className="mb-4"><label htmlFor="machineName" className="block text-sm font-medium text-slate-700 mb-2">Machine Name</label><input id="machineName" type="text" value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder="e.g., Dryer 3" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none transition" required autoFocus /></div><div className="mb-6"><label className="block text-sm font-medium text-slate-700 mb-2">Machine Type</label><div className="flex gap-4"><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="machineType" value="washer" checked={newMachineType === 'washer'} onChange={() => setNewMachineType('washer')} className="form-radio text-sky-600 focus:ring-sky-500"/><span className="font-medium text-slate-800">Washer</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="machineType" value="dryer" checked={newMachineType === 'dryer'} onChange={() => setNewMachineType('dryer')} className="form-radio text-sky-600 focus:ring-sky-500"/><span className="font-medium text-slate-800">Dryer</span></label></div></div><div className="flex justify-end gap-3"><button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-semibold transition-colors">Cancel</button><button type="submit" className="px-4 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 transition-colors disabled:bg-slate-400" disabled={!newMachineName.trim()}>Save Machine</button></div></form></Modal>
       <Modal isOpen={!!machineToDelete} onClose={() => setMachineToDelete(null)} title="Confirm Deletion">{machineToDelete && ( <div> <p className="text-slate-600 mb-6">Are you sure you want to permanently delete <strong className="text-slate-800">{machineToDelete.name}</strong>? This action cannot be undone.</p><div className="flex justify-end gap-3"><button onClick={() => setMachineToDelete(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-semibold transition-colors">Cancel</button><button onClick={handleConfirmDelete} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors">Delete</button></div></div>)}</Modal>
       <Modal isOpen={isMembersModalOpen} onClose={() => setIsMembersModalOpen(false)} title="Room Members">{roomMembers.length > 0 ? ( <ul className="space-y-3 max-h-80 overflow-y-auto">{roomMembers.map((memberName, index) => ( <li key={index} className="flex items-center bg-slate-50 p-3 rounded-md"><span className="flex items-center justify-center w-7 h-7 mr-3 rounded-full bg-slate-200 text-slate-600"><MemberIcon className="w-4 h-4" /></span><span className="font-medium text-slate-700">{memberName}</span></li>))}</ul>) : ( <p className="text-sm text-slate-500 text-center py-4">No one has used a machine in this room yet.</p>)}<div className="flex justify-end mt-6"><button onClick={() => setIsMembersModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-semibold transition-colors">Close</button></div></Modal>
-
       <Modal isOpen={isDurationModalOpen} onClose={() => setIsDurationModalOpen(false)} title={`Start ${machineToStart?.type === 'dryer' ? 'Drying Cycle' : 'Wash Cycle'}`}>
         {machineToStart && (
           <div>
