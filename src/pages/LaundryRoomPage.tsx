@@ -115,17 +115,13 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const newMachines = roomData.machines.map(machine => {
         if (machine.id === id) {
             const updatedMachine = { ...machine, status, lastUsedBy: options?.username || machine.lastUsedBy };
-            const updatedMachine = { ...machine, status }; // Start with only status change
 
             if (status === MachineStatus.InUse && options?.durationMinutes) {
                 updatedMachine.finishTime = Date.now() + options.durationMinutes * 60 * 1000;
-                updatedMachine.lastUsedBy = options.username; // Set lastUsedBy when in use
             } else if (status === MachineStatus.Available || status === MachineStatus.OutOfService) {
                 updatedMachine.finishTime = null;
-                updatedMachine.lastUsedBy = null; // Explicitly set lastUsedBy to null when available or out of service
-            } else { // For other statuses like Finished
-                updatedMachine.lastUsedBy = machine.lastUsedBy; // Keep the last used by user for Finished state
             }
+
             return updatedMachine;
         }
         return machine;
