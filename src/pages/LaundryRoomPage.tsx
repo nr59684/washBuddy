@@ -120,6 +120,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                 updatedMachine.finishTime = Date.now() + options.durationMinutes * 60 * 1000;
             } else if (status === MachineStatus.Available || status === MachineStatus.OutOfService) {
                 updatedMachine.finishTime = null;
+                updatedMachine.lastUsedBy  = null;
             }
 
             return updatedMachine;
