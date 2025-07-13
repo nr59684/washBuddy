@@ -1,7 +1,6 @@
 
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/database';
-import 'firebase/compat/messaging';
 
 // Use Vite's standard `import.meta.env` to access environment variables.
 const firebaseConfig = {
@@ -18,7 +17,6 @@ const firebaseConfig = {
 
 let app: firebase.app.App;
 let db: firebase.database.Database;
-let messaging: firebase.messaging.Messaging | null = null;
 
 if (!firebaseConfig.apiKey) {
     document.body.innerHTML = `
@@ -34,9 +32,6 @@ if (!firebaseConfig.apiKey) {
 try {
   app = firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && firebase.messaging.isSupported()) {
-    messaging = firebase.messaging();
-  }
   
   // Use Vite's built-in `import.meta.env.DEV` to check for development mode.
   if (import.meta.env.DEV) {
@@ -57,33 +52,4 @@ try {
   throw new Error(`Firebase initialization failed: ${error.message}`);
 }
 
-export const requestFCMToken = async (): Promise<string | null> => {
-    if (!messaging) {
-        console.log("Firebase Messaging is not initialized or supported.");
-        return null;
-    }
-    if (!import.meta.env.VITE_VAPID_PUBLIC_KEY) {
-      console.error("VITE_VAPID_PUBLIC_KEY is not set in your .env file. FCM will not work.");
-      return null;
-    }
-    try {
-        const currentToken = await messaging.getToken({ vapidKey: import.meta.env.VITE_VAPID_PUBLIC_KEY });
-        if (currentToken) {
-            return currentToken;
-        } else {
-            console.log('No registration token available. Request permission to generate one.');
-            return null;
-        }
-    } catch (err) {
-        console.error('An error occurred while retrieving FCM token. ', err);
-        return null;
-    }
-};
-
-const onMessage = messaging ? messaging.onMessage.bind(messaging) : () => { 
-    console.warn("Messaging not supported, onMessage is a no-op.");
-    return () => {}; // Return an empty unsubscribe function
-};
-
-
-export { app, db, messaging, onMessage };
+export { app, db };

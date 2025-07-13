@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages and Firebase
 on:
   push:
     branches: [main]
@@ -6,11 +6,11 @@ on:
 
 permissions:
   contents: read
-  pages: write      # allow the deploy step to publish
-  id-token: write   # needed for OIDC authentication
+  pages: write
+  id-token: write
 
 jobs:
-  build:
+  build_and_deploy_frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +35,10 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          # everything in dist gets packaged for Pages
           path: ./dist
 
-  deploy:
-    needs: build
+  deploy_frontend:
+    needs: build_and_deploy_frontend
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -47,3 +46,20 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4.0.5
+
+  deploy_backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --prefix functions
+      - uses: firebase/firebase-tools@master
+        with:
+          args: deploy --only functions
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}

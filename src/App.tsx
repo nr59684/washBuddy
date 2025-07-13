@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LandingPage from './pages/LandingPage';
 import LaundryRoomPage from './pages/LaundryRoomPage';
 import { User } from './types';
+import { subscribeToPushNotifications } from './services/push';
 
 // The user object stored in state and localStorage
 interface StoredUser {
@@ -57,7 +58,16 @@ const App: React.FC = () => {
     });
   };
 
-  const handleLoginAndCreateRoom = (username: string, roomName: string) => {
+  const getApiEndpoint = (path: string) => {
+    if (import.meta.env.DEV) {
+      return `/api/${path}`;
+    }
+    const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+    const region = 'europe-west1';
+    return `https://${region}-${projectId}.cloudfunctions.net/${path}`;
+  };
+
+  const handleLoginAndCreateRoom = async (username: string, roomName: string) => {
     // Generate a new 8-digit room code
     const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
     // The roomName is now passed directly to the page to initialize the backend state
@@ -66,17 +76,37 @@ const App: React.FC = () => {
       localStorage.setItem('washBuddyUser', JSON.stringify({ username, roomId: newRoomId }));
       // We pass the full user object to the page component on first creation
       setUser(newUser); 
+      const subscription = await subscribeToPushNotifications();
+      if (subscription) {
+        await fetch(getApiEndpoint('saveSubscription'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ subscription, userId: username, roomId: newRoomId }),
+        });
+      }
     } catch (error) {
        console.error("Failed to save user to localStorage", error);
     }
   };
 
-  const handleLoginAndJoinRoom = (username: string, roomId: string) => {
+  const handleLoginAndJoinRoom = async (username: string, roomId: string) => {
     // The room name is no longer needed here; it will be fetched from the database.
     const newUser: StoredUser = { username, roomId };
      try {
       localStorage.setItem('washBuddyUser', JSON.stringify(newUser));
       setUser(newUser);
+      const subscription = await subscribeToPushNotifications();
+      if (subscription) {
+        await fetch(getApiEndpoint('saveSubscription'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ subscription, userId: username, roomId }),
+        });
+      }
     } catch (error) {
        console.error("Failed to save user to localStorage", error);
     }

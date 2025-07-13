@@ -100,15 +100,23 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const { title, body, icon, badge } = data;
+  const { title, body, icon, badge, data: pushData } = data.notification || data;
   
   const options = {
     body: body || 'You have a new message from Wash Buddy.',
-    // Use the 192x192 icon from the public/icons folder as the notification icon
-    icon: '/icons/icon-192.png',
-    // Optional: Use a badge icon
-    badge: '/icons/icon-192.png',
+    icon: icon || '/icons/icon-192.png',
+    badge: badge || '/icons/icon-192.png',
+    data: pushData || { url: '/' }
   };
 
   event.waitUntil(self.registration.showNotification(title || 'Wash Buddy', options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const urlToOpen = event.notification.data.url || '/';
+
+    event.waitUntil(
+        self.clients.openWindow(urlToOpen)
+    );
 });
