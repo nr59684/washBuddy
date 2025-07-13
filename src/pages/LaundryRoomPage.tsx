@@ -3,17 +3,18 @@ import { Machine, MachineStatus, User, WashMode, RoomData } from '../types';
 import Header from '../components/Header';
 import MachineCard from '../components/MachineCard';
 import Modal from '../components/Modal';
-// ✨ CHANGED: Import the new service function and the token request function
-import { roomServiceFactory, updateUserFcmToken } from '../services/roomService';
-import { requestFCMToken } from '../services/firebase';
-import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon, CopyIcon } from '../components/icons';
+import { roomServiceFactory } from '../services/roomService';
+import { subscribeToPushNotifications } from '../services/push';
+import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon } from '../components/icons';
 
 interface LaundryRoomPageProps {
   user: User;
   onLogout: () => void;
+  installPrompt: any;
+  onInstallClick: () => void;
 }
 
-const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => {
+const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout, installPrompt, onInstallClick }) => {
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -33,30 +34,11 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   const [newModeName, setNewModeName] = useState('');
   const [newModeDuration, setNewModeDuration] = useState('');
 
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-  
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
-
   const [pushStatus, setPushStatus] = useState<NotificationPermission | 'loading'>('loading');
   const [platformInfo, setPlatformInfo] = useState({ isIOS: false, isPushSupported: false });
   
   const roomService = useMemo(() => roomServiceFactory.getService(user.roomId, user.roomName), [user.roomId, user.roomName]);
 
-  // Effect to handle the PWA installation prompt
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-    };
-  
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
-  
-  // Effect to manage all data-driven notifications and badge updates
   useEffect(() => {
     let isMounted = true;
 
@@ -96,7 +78,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   }, []);
 
 
-  // Display user object that is updated with the real room name once loaded
   const displayUser = useMemo(() => {
     if (roomData?.name && roomData.name !== user.roomName) {
         return { ...user, roomName: roomData.name };
@@ -114,7 +95,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newMachines = roomData.machines.map(machine => {
         if (machine.id === id) {
-          console.log(`username set machine oos: ${options?.username} `);
             const updatedMachine: Machine = { ...machine, status };
 
             if (options?.username !== undefined) {
@@ -212,7 +192,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   
   const { roomMembers, allWashersBusy, allDryersBusy } = useMemo(() => {
     if (!roomData) return { roomMembers: [], allWashersBusy: false, allDryersBusy: false };
-    // ✨ CHANGED: Get members from the dedicated members object
     const members = roomData.members ? Object.keys(roomData.members) : [];
     const washers = roomData.machines.filter(m => m.type === 'washer');
     const dryers = roomData.machines.filter(m => m.type === 'dryer');
@@ -220,19 +199,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
     const allDryersBusy = dryers.length > 0 && dryers.every(m => m.status === 'In Use');
     return { roomMembers: members, allWashersBusy, allDryersBusy };
 }, [roomData]);
-  
-  // PWA Install Handler
-  const handleInstallClick = async () => {
-    if (!installPrompt) {
-      return;
-    }
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    console.log(`User response to the install prompt: ${outcome}`);
-    setInstallPrompt(null);
-  };
 
-  // ✨ CHANGED: This is the updated core logic for getting and saving the token.
   const handleRequestNotificationPermission = async () => {
     if (!platformInfo.isPushSupported) return;
     try {
@@ -241,18 +208,16 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
       setPushStatus(permission);
 
       if (permission === 'granted') {
-        console.log('Notification permission granted. Requesting FCM token...');
-        const token = await requestFCMToken();
-        if (token) {
-          setFcmToken(token);
-          console.log('FCM Token retrieved:', token);
-          // Save the token to the user's member profile in the database
-          await updateUserFcmToken(user.roomId, user, token);
-        } else {
-            console.warn('Failed to get FCM token.');
+        const subscription = await subscribeToPushNotifications();
+        if (subscription) {
+            await fetch(import.meta.env.DEV ? '/api/saveSubscription' : `https://europe-west1-${import.meta.env.VITE_FIREBASE_PROJECT_ID}.cloudfunctions.net/saveSubscription`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ subscription, userId: user.username, roomId: user.roomId }),
+            });
         }
-      } else {
-        console.log('Notification permission denied.');
       }
     } catch (error) {
       console.error('Error during notification permission or token request:', error);
@@ -261,11 +226,20 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
   };
 
   const handleDisablePush = async () => {
-    // ✨ CHANGED: Invalidate the token in the database by setting it to null
     try {
-        await updateUserFcmToken(user.roomId, user, null);
-        setFcmToken(null);
-        alert("Notifications have been disabled from this app. To fully block them, please go to your browser settings.");
+        const subscription = await navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription());
+        if (subscription) {
+            await subscription.unsubscribe();
+        }
+        await fetch(import.meta.env.DEV ? '/api/saveSubscription' : `https://europe-west1-${import.meta.env.VITE_FIREBASE_PROJECT_ID}.cloudfunctions.net/saveSubscription`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ subscription: null, userId: user.username, roomId: user.roomId }),
+        });
+        setPushStatus('default');
+        alert("Notifications have been disabled from this app.");
     } catch (error) {
         console.error("Failed to disable notifications:", error)
     }
@@ -351,7 +325,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
         </div>
       </main>
 
-      {/* MODALS: The JSX for modals remains the same */}
+      {/* MODALS */}
       <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Machine"><form onSubmit={handleAddMachine}><div className="mb-4"><label htmlFor="machineName" className="block text-sm font-medium text-slate-700 mb-2">Machine Name</label><input id="machineName" type="text" value={newMachineName} onChange={(e) => setNewMachineName(e.target.value)} placeholder="e.g., Dryer 3" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none transition" required autoFocus /></div><div className="mb-6"><label className="block text-sm font-medium text-slate-700 mb-2">Machine Type</label><div className="flex gap-4"><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="machineType" value="washer" checked={newMachineType === 'washer'} onChange={() => setNewMachineType('washer')} className="form-radio text-sky-600 focus:ring-sky-500"/><span className="font-medium text-slate-800">Washer</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="machineType" value="dryer" checked={newMachineType === 'dryer'} onChange={() => setNewMachineType('dryer')} className="form-radio text-sky-600 focus:ring-sky-500"/><span className="font-medium text-slate-800">Dryer</span></label></div></div><div className="flex justify-end gap-3"><button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-semibold transition-colors">Cancel</button><button type="submit" className="px-4 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 transition-colors disabled:bg-slate-400" disabled={!newMachineName.trim()}>Save Machine</button></div></form></Modal>
       <Modal isOpen={!!machineToDelete} onClose={() => setMachineToDelete(null)} title="Confirm Deletion">{machineToDelete && ( <div> <p className="text-slate-600 mb-6">Are you sure you want to permanently delete <strong className="text-slate-800">{machineToDelete.name}</strong>? This action cannot be undone.</p><div className="flex justify-end gap-3"><button onClick={() => setMachineToDelete(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-semibold transition-colors">Cancel</button><button onClick={handleConfirmDelete} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors">Delete</button></div></div>)}</Modal>
       <Modal isOpen={isMembersModalOpen} onClose={() => setIsMembersModalOpen(false)} title="Room Members">{roomMembers.length > 0 ? ( <ul className="space-y-3 max-h-80 overflow-y-auto">{roomMembers.map((memberName, index) => ( <li key={index} className="flex items-center bg-slate-50 p-3 rounded-md"><span className="flex items-center justify-center w-7 h-7 mr-3 rounded-full bg-slate-200 text-slate-600"><MemberIcon className="w-4 h-4" /></span><span className="font-medium text-slate-700">{memberName}</span></li>))}</ul>) : ( <p className="text-sm text-slate-500 text-center py-4">No one has used a machine in this room yet.</p>)}<div className="flex justify-end mt-6"><button onClick={() => setIsMembersModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 font-semibold transition-colors">Close</button></div></Modal>
@@ -385,7 +359,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
           </div>
         )}
       </Modal>
-
       <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Room Settings & Modes">
         <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 divide-y divide-slate-200">
             <div className="pt-2">
@@ -393,7 +366,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                 {installPrompt ? (
                   <div className="bg-sky-50 p-4 rounded-lg text-center">
                     <p className="font-medium text-sky-800 mb-3">Install Wash Buddy to your device for easy access and offline use.</p>
-                    <button onClick={handleInstallClick} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors flex items-center justify-center gap-2">
+                    <button onClick={onInstallClick} className="w-full px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors flex items-center justify-center gap-2">
                       <DownloadIcon className="w-5 h-5"/>
                       Install App
                     </button>
@@ -432,18 +405,6 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
                       {pushStatus === 'granted' && (
                         <div className="mt-4 text-center">
                            <button onClick={testSendNotification} className="w-full px-4 py-2 bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-600 transition-colors disabled:bg-slate-400 mb-3" disabled={pushStatus !== 'granted'}>Send Test Notification</button>
-                        </div>
-                      )}
-                      {pushStatus === 'granted' && fcmToken && (
-                        <div className="mt-4 bg-slate-50 p-3 rounded-lg text-sm text-slate-700 break-all">
-                          <p className="font-semibold mb-2">FCM Token (for debugging):</p>
-                          <div className="flex items-center">
-                             <span className="flex-grow pr-2 font-mono text-xs">{fcmToken}</span>
-                             <button 
-                                onClick={() => navigator.clipboard.writeText(fcmToken)}
-                                className="flex-shrink-0 p-1 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded"
-                                title="Copy Token"><CopyIcon className="w-4 h-4" /></button>
-                          </div>
                         </div>
                       )}
                   </div>

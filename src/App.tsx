@@ -142,6 +142,8 @@ const App: React.FC = () => {
     <LaundryRoomPage
       user={userForPage}
       onLogout={handleLogout}
+      installPrompt={installPrompt}
+      onInstallClick={handleInstallClick}
     />
   );
 };
