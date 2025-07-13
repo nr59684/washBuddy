@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import { roomServiceFactory, updateUserFcmToken } from '../services/roomService';
 import { requestFCMToken } from '../services/firebase';
 import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon, CopyIcon } from '../components/icons';
+import { console } from 'inspector';
 
 interface LaundryRoomPageProps {
   user: User;
@@ -114,6 +115,7 @@ const LaundryRoomPage: React.FC<LaundryRoomPageProps> = ({ user, onLogout }) => 
 
     const newMachines = roomData.machines.map(machine => {
         if (machine.id === id) {
+          console.log(`username set machine oos: ${options?.username} `);
             const updatedMachine = { ...machine, status, lastUsedBy: options?.username ?? machine.lastUsedBy };
 
             if (status === MachineStatus.InUse && options?.durationMinutes) {
