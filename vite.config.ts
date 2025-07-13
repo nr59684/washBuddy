@@ -56,7 +56,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: `http://localhost:5001/${env.VITE_FIREBASE_PROJECT_ID}/europe-west1`,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^/api/, ''),
+          rewrite: (path) => path.replace(/^\/api/, ''),
         },
       },
     },
