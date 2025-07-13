@@ -7,7 +7,6 @@ import Modal from '../components/Modal';
 import { roomServiceFactory, updateUserFcmToken } from '../services/roomService';
 import { requestFCMToken } from '../services/firebase';
 import { PlusCircleIcon, WasherIcon, UsersIcon, UserIcon as MemberIcon, PlayIcon, BellIcon, SettingsIcon, TrashIcon, ClockIcon, DownloadIcon, CopyIcon } from '../components/icons';
-import { console } from 'inspector';
 
 interface LaundryRoomPageProps {
   user: User;
